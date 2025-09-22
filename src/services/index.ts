@@ -9,5 +9,6 @@ export type {
   Profile, ProfileInsert, ProfileUpdate,
   Space, SpaceInsert, SpaceUpdate,
   Address, AddressInsert, AddressUpdate,
-  SpaceMedia, SpaceMediaInsert, SpaceMediaUpdate
+  SpaceMedia, SpaceMediaInsert, SpaceMediaUpdate,
+  ProfileContact, ProfileContactInsert, ProfileContactUpdate
 } from './supabase';

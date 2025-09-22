@@ -8,6 +8,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 // Database types
 export interface Database {
   public: {
+    Enums: {
+      user_status: 'Active' | 'InActive';
+    };
     Tables: {
       profile: {
         Row: {
@@ -15,18 +18,21 @@ export interface Database {
           created_at: string;
           name: string | null;
           phone: string;
+          user_status: 'Active' | 'InActive' | null;
         };
         Insert: {
           id: string;
           created_at?: string;
           name?: string | null;
           phone: string;
+          user_status?: 'Active' | 'InActive' | null;
         };
         Update: {
           id?: string;
           created_at?: string;
           name?: string | null;
           phone?: string;
+          user_status?: 'Active' | 'InActive' | null;
         };
       };
       space: {
@@ -161,6 +167,26 @@ export interface Database {
           metadata?: any | null;
         };
       };
+      profile_contact: {
+        Row: {
+          id: string;
+          userid: string;
+          contactname: string | null;
+          contactnumber: string | null;
+        };
+        Insert: {
+          id?: string;
+          userid: string;
+          contactname?: string | null;
+          contactnumber?: string | null;
+        };
+        Update: {
+          id?: string;
+          userid?: string;
+          contactname?: string | null;
+          contactnumber?: string | null;
+        };
+      };
     };
   };
 }
@@ -180,3 +206,7 @@ export type AddressUpdate = Database['public']['Tables']['address']['Update'];
 export type SpaceMedia = Database['public']['Tables']['space_media']['Row'];
 export type SpaceMediaInsert = Database['public']['Tables']['space_media']['Insert'];
 export type SpaceMediaUpdate = Database['public']['Tables']['space_media']['Update'];
+
+export type ProfileContact = Database['public']['Tables']['profile_contact']['Row'];
+export type ProfileContactInsert = Database['public']['Tables']['profile_contact']['Insert'];
+export type ProfileContactUpdate = Database['public']['Tables']['profile_contact']['Update'];

@@ -1,9 +1,9 @@
-import { supabase, type Profile, type ProfileInsert, type ProfileUpdate } from './supabase';
+import { supabase, type Profile, type ProfileInsert, type ProfileUpdate, type ProfileContact } from './supabase';
 
 export interface ProfileWithStats extends Profile {
   totalListings?: number;
   activeCampaigns?: number;
-  status?: 'active' | 'suspended' | 'pending';
+  status?: 'Active' | 'InActive';
   email?: string;
 }
 
@@ -23,17 +23,92 @@ export class ProfileService {
         throw error;
       }
 
-      // Transform data to match the expected format for the admin dashboard
-      return data.map(profile => ({
-        ...profile,
-        totalListings: 0, // TODO: Add actual listing count from listings table
-        activeCampaigns: 0, // TODO: Add actual campaign count
-        status: 'active' as const, // TODO: Add actual status logic
-        email: '', // TODO: Get email from auth.users if needed
-      }));
+      // Get space counts for each profile
+      const profilesWithStats = await Promise.all(
+        data.map(async (profile) => {
+          const { totalListings, activeCampaigns } = await this.getUserSpaceCounts(profile.id);
+          return {
+            ...profile,
+            totalListings,
+            activeCampaigns,
+            status: profile.user_status || 'InActive' as const,
+            email: '', // TODO: Get email from auth.users if needed
+          };
+        })
+      );
+
+      return profilesWithStats;
     } catch (error) {
       console.error('Error in getAllProfiles:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Get user's spaces with details
+   */
+  static async getUserSpaces(profileId: string): Promise<any[]> {
+    try {
+      const { data, error } = await supabase
+        .from('space')
+        .select(`
+          *,
+          address:address_id(*),
+          space_media(*)
+        `)
+        .eq('profile_id', profileId)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching user spaces:', error);
+        throw error;
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Error in getUserSpaces:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get space counts for a specific user
+   */
+  static async getUserSpaceCounts(profileId: string): Promise<{ totalListings: number; activeCampaigns: number }> {
+    try {
+      // Get total spaces count
+      const { count: totalSpaces, error: totalError } = await supabase
+        .from('space')
+        .select('*', { count: 'exact', head: true })
+        .eq('profile_id', profileId);
+
+      if (totalError) {
+        console.error('Error fetching total spaces count:', totalError);
+        throw totalError;
+      }
+
+      // Get approved spaces count (active campaigns)
+      const { count: approvedSpaces, error: approvedError } = await supabase
+        .from('space')
+        .select('*', { count: 'exact', head: true })
+        .eq('profile_id', profileId)
+        .eq('list_status', 'approved');
+
+      if (approvedError) {
+        console.error('Error fetching approved spaces count:', approvedError);
+        throw approvedError;
+      }
+
+      return {
+        totalListings: totalSpaces || 0,
+        activeCampaigns: approvedSpaces || 0,
+      };
+    } catch (error) {
+      console.error('Error in getUserSpaceCounts:', error);
+      return {
+        totalListings: 0,
+        activeCampaigns: 0,
+      };
     }
   }
 
@@ -53,11 +128,13 @@ export class ProfileService {
         throw error;
       }
 
+      const { totalListings, activeCampaigns } = await this.getUserSpaceCounts(id);
+
       return {
         ...data,
-        totalListings: 0,
-        activeCampaigns: 0,
-        status: 'active' as const,
+        totalListings,
+        activeCampaigns,
+        status: data.user_status || 'InActive' as const,
         email: '',
       };
     } catch (error) {
@@ -114,6 +191,34 @@ export class ProfileService {
   }
 
   /**
+   * Update user status
+   */
+  static async updateUserStatus(id: string, status: 'Active' | 'InActive'): Promise<Profile> {
+    try {
+      // Save the actual enum value directly
+      console.log('Updating user status:', { id, status });
+      
+      const { data, error } = await supabase
+        .from('profile')
+        .update({ user_status: status })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error updating user status:', error);
+        throw error;
+      }
+
+      console.log('Database response:', { data, error });
+      return data;
+    } catch (error) {
+      console.error('Error in updateUserStatus:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Delete a profile
    */
   static async deleteProfile(id: string): Promise<void> {
@@ -149,13 +254,21 @@ export class ProfileService {
         throw error;
       }
 
-      return data.map(profile => ({
-        ...profile,
-        totalListings: 0,
-        activeCampaigns: 0,
-        status: 'active' as const,
-        email: '',
-      }));
+      // Get space counts for each profile
+      const profilesWithStats = await Promise.all(
+        data.map(async (profile) => {
+          const { totalListings, activeCampaigns } = await this.getUserSpaceCounts(profile.id);
+          return {
+            ...profile,
+            totalListings,
+            activeCampaigns,
+            status: profile.user_status || 'InActive' as const,
+            email: '',
+          };
+        })
+      );
+
+      return profilesWithStats;
     } catch (error) {
       console.error('Error in searchProfiles:', error);
       throw error;
@@ -191,13 +304,19 @@ export class ProfileService {
         throw error;
       }
 
-      const transformedData = data.map(profile => ({
-        ...profile,
-        totalListings: 0,
-        activeCampaigns: 0,
-        status: 'active' as const,
-        email: '',
-      }));
+      // Get space counts for each profile
+      const transformedData = await Promise.all(
+        data.map(async (profile) => {
+          const { totalListings, activeCampaigns } = await this.getUserSpaceCounts(profile.id);
+          return {
+            ...profile,
+            totalListings,
+            activeCampaigns,
+            status: profile.user_status || 'InActive' as const,
+            email: '',
+          };
+        })
+      );
 
       return {
         data: transformedData,
@@ -207,6 +326,29 @@ export class ProfileService {
       };
     } catch (error) {
       console.error('Error in getProfilesPaginated:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get user contact details
+   */
+  static async getUserContactDetails(userId: string): Promise<ProfileContact[]> {
+    try {
+      const { data, error } = await supabase
+        .from('profile_contact')
+        .select('*')
+        .eq('userid', userId)
+        .order('contactname', { ascending: true });
+
+      if (error) {
+        console.error('Error fetching user contact details:', error);
+        throw error;
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error('Error in getUserContactDetails:', error);
       throw error;
     }
   }

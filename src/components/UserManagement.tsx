@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, UserX, UserCheck, Send, Eye, MoreHorizontal, Loader2 } from 'lucide-react';
+import { Search, UserX, UserCheck, Send, Eye, MoreHorizontal, Loader2, Download } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -14,10 +14,14 @@ import { ProfileService, type ProfileWithStats } from '../services';
 export function UserManagement() {
   const [users, setUsers] = useState<ProfileWithStats[]>([]);
   const [selectedUser, setSelectedUser] = useState<ProfileWithStats | null>(null);
+  const [userListings, setUserListings] = useState<any[]>([]);
+  const [listingsLoading, setListingsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
+  const [downloadingContacts, setDownloadingContacts] = useState<string | null>(null);
 
   // Fetch users from Supabase
   useEffect(() => {
@@ -50,37 +54,151 @@ export function UserManagement() {
     return matchesSearch && matchesStatus;
   });
 
-  const handleStatusChange = async (userId: string, newStatus: 'active' | 'suspended' | 'pending') => {
+  const handleStatusChange = async (userId: string, newStatus: 'Active' | 'InActive') => {
     try {
+      setUpdatingStatus(userId);
+      setError(null);
+      
+      console.log('Button clicked - updating status:', { userId, newStatus });
+      
       // Update the user status in Supabase
-      // Note: You might need to add a status field to your profile table
-      // For now, we'll just update the local state
+      const updatedProfile = await ProfileService.updateUserStatus(userId, newStatus);
+      
+      console.log('Updated profile from database:', updatedProfile);
+      
+      // Update the local state with the actual database values
       setUsers(users.map(user => 
-        user.id === userId ? { ...user, status: newStatus } : user
+        user.id === userId ? { 
+          ...user, 
+          status: newStatus, 
+          user_status: updatedProfile.user_status 
+        } : user
       ));
+      
+      // Update selected user if it's the same user
+      if (selectedUser && selectedUser.id === userId) {
+        setSelectedUser({ 
+          ...selectedUser, 
+          status: newStatus, 
+          user_status: updatedProfile.user_status 
+        });
+      }
+      
     } catch (err) {
       console.error('Error updating user status:', err);
       setError('Failed to update user status');
+    } finally {
+      setUpdatingStatus(null);
     }
   };
 
   const getStatusBadge = (status: string) => {
     const variants = {
-      active: 'default' as const,
-      pending: 'secondary' as const,
-      suspended: 'destructive' as const
+      Active: 'default' as const,
+      InActive: 'destructive' as const
     };
     return <Badge variant={variants[status as keyof typeof variants] || 'secondary'}>{status}</Badge>;
   };
 
-  const getUserListings = (userId: string) => {
-    // TODO: Implement when you have a listings table
-    return [];
+  const loadUserListings = async (userId: string) => {
+    try {
+      setListingsLoading(true);
+      const spaces = await ProfileService.getUserSpaces(userId);
+      const listings = spaces.map(space => ({
+        id: space.id,
+        name: space.name,
+        type: space.type,
+        status: space.list_status || 'pending',
+        location: space.address ? 
+          `${space.address.city || ''}, ${space.address.district || ''}`.trim() || 
+          `${space.address.village || ''}, ${space.address.state || ''}`.trim() || 
+          'No location' 
+          : 'No address',
+        created_at: space.created_at
+      }));
+      setUserListings(listings);
+    } catch (error) {
+      console.error('Error fetching user listings:', error);
+      setUserListings([]);
+    } finally {
+      setListingsLoading(false);
+    }
   };
 
   const getInitials = (name: string | null) => {
     if (!name) return 'U';
     return name.split(' ').map(n => n[0]).join('').toUpperCase();
+  };
+
+  // Download contact details as CSV
+  const downloadContactsAsCSV = async (userId: string, userName: string) => {
+    try {
+      setDownloadingContacts(userId);
+      const contacts = await ProfileService.getUserContactDetails(userId);
+      
+      if (contacts.length === 0) {
+        alert('No contact details found for this user.');
+        return;
+      }
+
+      // Create CSV content
+      const headers = ['Contact Name', 'Contact Number'];
+      const csvContent = [
+        headers.join(','),
+        ...contacts.map(contact => [
+          `"${contact.contactname || 'N/A'}"`,
+          `"${contact.contactnumber || 'N/A'}"`
+        ].join(','))
+      ].join('\n');
+
+      // Create and download file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `${userName}_contacts.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Error downloading contacts as CSV:', error);
+      alert('Failed to download contact details: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setDownloadingContacts(null);
+    }
+  };
+
+  // Download contact details as JSON
+  const downloadContactsAsJSON = async (userId: string, userName: string) => {
+    try {
+      setDownloadingContacts(userId);
+      const contacts = await ProfileService.getUserContactDetails(userId);
+      
+      if (contacts.length === 0) {
+        alert('No contact details found for this user.');
+        return;
+      }
+
+      // Create JSON content
+      const jsonContent = JSON.stringify(contacts, null, 2);
+
+      // Create and download file
+      const blob = new Blob([jsonContent], { type: 'application/json;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `${userName}_contacts.json`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Error downloading contacts as JSON:', error);
+      alert('Failed to download contact details: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      setDownloadingContacts(null);
+    }
   };
 
   if (loading) {
@@ -129,9 +247,8 @@ export function UserManagement() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="suspended">Suspended</SelectItem>
+                <SelectItem value="Active">Active</SelectItem>
+                <SelectItem value="InActive">InActive</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -179,7 +296,14 @@ export function UserManagement() {
                       <div className="flex items-center justify-end gap-2">
                         <Dialog>
                           <DialogTrigger asChild>
-                            <Button size="sm" variant="ghost" onClick={() => setSelectedUser(user)}>
+                            <Button 
+                              size="sm" 
+                              variant="ghost" 
+                              onClick={() => {
+                                setSelectedUser(user);
+                                loadUserListings(user.id);
+                              }}
+                            >
                               <Eye className="w-4 h-4" />
                             </Button>
                           </DialogTrigger>
@@ -232,54 +356,99 @@ export function UserManagement() {
 
                                 {/* User Listings */}
                                 <div>
-                                  <h4 className="font-medium mb-3">User Listings</h4>
+                                  <h4 className="font-medium mb-3">User Listings ({userListings.length})</h4>
                                   <div className="space-y-2 max-h-60 overflow-y-auto">
-                                    {getUserListings(selectedUser.id).map((listing) => (
-                                      <div key={listing.id} className="flex items-center justify-between p-3 border rounded-lg">
-                                        <div>
-                                          <p className="font-medium">{listing.id}</p>
-                                          <p className="text-sm text-muted-foreground">{listing.location}</p>
-                                        </div>
-                                        <div className="flex items-center space-x-2">
-                                          <Badge className="capitalize">{listing.type}</Badge>
-                                          <Badge
-                                            variant={
-                                              listing.status === 'approved' ? 'default' :
-                                              listing.status === 'pending' ? 'secondary' :
-                                              'destructive'
-                                            }
-                                          >
-                                            {listing.status}
-                                          </Badge>
-                                        </div>
+                                    {listingsLoading ? (
+                                      <div className="flex items-center justify-center py-4">
+                                        <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                                        <span className="text-sm text-muted-foreground">Loading listings...</span>
                                       </div>
-                                    ))}
-                                    {getUserListings(selectedUser.id).length === 0 && (
-                                      <p className="text-center text-muted-foreground py-4">No listings found</p>
+                                    ) : (
+                                      <>
+                                        {userListings.map((listing) => (
+                                          <div key={listing.id} className="flex items-center justify-between p-3 border rounded-lg">
+                                            <div>
+                                              <p className="font-medium">{listing.name || listing.id}</p>
+                                              <p className="text-sm text-muted-foreground">{listing.location}</p>
+                                              <p className="text-xs text-muted-foreground">
+                                                Created: {new Date(listing.created_at).toLocaleDateString()}
+                                              </p>
+                                            </div>
+                                            <div className="flex items-center space-x-2">
+                                              <Badge className="capitalize">{listing.type}</Badge>
+                                              <Badge
+                                                variant={
+                                                  listing.status === 'approved' ? 'default' :
+                                                  listing.status === 'pending' ? 'secondary' :
+                                                  'destructive'
+                                                }
+                                              >
+                                                {listing.status}
+                                              </Badge>
+                                            </div>
+                                          </div>
+                                        ))}
+                                        {userListings.length === 0 && (
+                                          <p className="text-center text-muted-foreground py-4">No listings found</p>
+                                        )}
+                                      </>
                                     )}
                                   </div>
                                 </div>
 
                                 {/* Actions */}
-                                <div className="flex gap-2 pt-4 border-t">
+                                <div className="flex flex-wrap gap-2 pt-4 border-t">
                                   <Button 
-                                    onClick={() => handleStatusChange(selectedUser.id, 'active')}
-                                    disabled={selectedUser.status === 'active'}
+                                    onClick={() => handleStatusChange(selectedUser.id, 'Active')}
+                                    disabled={selectedUser.status === 'Active' || updatingStatus === selectedUser.id}
+                                    variant={selectedUser.status === 'Active' ? 'secondary' : 'default'}
                                   >
-                                    <UserCheck className="w-4 h-4 mr-2" />
-                                    Activate
+                                    {updatingStatus === selectedUser.id ? (
+                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    ) : (
+                                      <UserCheck className="w-4 h-4 mr-2" />
+                                    )}
+                                    {selectedUser.status === 'Active' ? 'Active' : 'Activate'}
                                   </Button>
                                   <Button 
-                                    variant="destructive"
-                                    onClick={() => handleStatusChange(selectedUser.id, 'suspended')}
-                                    disabled={selectedUser.status === 'suspended'}
+                                    variant={selectedUser.status === 'InActive' ? 'secondary' : 'destructive'}
+                                    onClick={() => handleStatusChange(selectedUser.id, 'InActive')}
+                                    disabled={selectedUser.status === 'InActive' || updatingStatus === selectedUser.id}
                                   >
-                                    <UserX className="w-4 h-4 mr-2" />
-                                    Suspend
+                                    {updatingStatus === selectedUser.id ? (
+                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    ) : (
+                                      <UserX className="w-4 h-4 mr-2" />
+                                    )}
+                                    {selectedUser.status === 'InActive' ? 'InActive' : 'Deactivate'}
                                   </Button>
-                                  <Button variant="outline">
+                                  <Button variant="outline" disabled={updatingStatus === selectedUser.id}>
                                     <Send className="w-4 h-4 mr-2" />
                                     Send Message
+                                  </Button>
+                                  <Button 
+                                    variant="outline" 
+                                    disabled={downloadingContacts === selectedUser.id}
+                                    onClick={() => downloadContactsAsCSV(selectedUser.id, selectedUser.name || 'User')}
+                                  >
+                                    {downloadingContacts === selectedUser.id ? (
+                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    ) : (
+                                      <Download className="w-4 h-4 mr-2" />
+                                    )}
+                                    Download CSV
+                                  </Button>
+                                  <Button 
+                                    variant="outline" 
+                                    disabled={downloadingContacts === selectedUser.id}
+                                    onClick={() => downloadContactsAsJSON(selectedUser.id, selectedUser.name || 'User')}
+                                  >
+                                    {downloadingContacts === selectedUser.id ? (
+                                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    ) : (
+                                      <Download className="w-4 h-4 mr-2" />
+                                    )}
+                                    Download JSON
                                   </Button>
                                 </div>
                               </div>
@@ -294,16 +463,22 @@ export function UserManagement() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleStatusChange(user.id, 'active')}>
+                            <DropdownMenuItem 
+                              onClick={() => handleStatusChange(user.id, 'Active')}
+                              disabled={user.status === 'Active' || updatingStatus === user.id}
+                            >
                               Activate User
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleStatusChange(user.id, 'suspended')}>
-                              Suspend User
+                            <DropdownMenuItem 
+                              onClick={() => handleStatusChange(user.id, 'InActive')}
+                              disabled={user.status === 'InActive' || updatingStatus === user.id}
+                            >
+                              Deactivate User
                             </DropdownMenuItem>
-                            <DropdownMenuItem>
+                            <DropdownMenuItem disabled={updatingStatus === user.id}>
                               Send Notification
                             </DropdownMenuItem>
-                            <DropdownMenuItem>
+                            <DropdownMenuItem disabled={updatingStatus === user.id}>
                               Verify User
                             </DropdownMenuItem>
                           </DropdownMenuContent>

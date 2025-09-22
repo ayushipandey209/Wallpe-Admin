@@ -457,45 +457,6 @@ export function ApprovalsPage() {
                     )}
                   </div>
 
-                  {/* Quick Action Buttons */}
-                  <div className="flex gap-2 pt-2" onClick={(e) => e.stopPropagation()}>
-                    {listing.list_status === 'pending' ? (
-                      <>
-                        <Button 
-                          size="sm" 
-                          className="flex-1"
-                          onClick={() => handleApproval(listing.id, 'approved')}
-                        >
-                          <Check className="w-4 h-4 mr-1" />
-                          Approve
-                        </Button>
-                        <Button 
-                          size="sm" 
-                          variant="destructive" 
-                          className="flex-1"
-                          onClick={() => handleApproval(listing.id, 'rejected')}
-                        >
-                          <X className="w-4 h-4 mr-1" />
-                          Deny
-                        </Button>
-                      </>
-                    ) : (
-                      <>
-                        <Button 
-                          size="sm" 
-                          variant="outline" 
-                          className="flex-1"
-                          onClick={() => handleApproval(listing.id, 'pending')}
-                        >
-                          <Clock className="w-4 h-4 mr-1" />
-                          Re-review
-                        </Button>
-                      </>
-                    )}
-                    <Button size="sm" variant="outline">
-                      <MessageSquare className="w-4 h-4" />
-                    </Button>
-                  </div>
                 </CardContent>
               </Card>
             ))}
