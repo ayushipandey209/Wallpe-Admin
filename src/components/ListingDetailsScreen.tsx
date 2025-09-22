@@ -16,6 +16,7 @@ export function ListingDetailsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [sourcePage, setSourcePage] = useState<string>('/listings'); // Default to listings
 
   // Extract ID from URL pathname as fallback if useParams fails
   const getSpaceId = () => {
@@ -55,6 +56,12 @@ export function ListingDetailsScreen() {
   console.log('Final ID being used:', id);
 
   useEffect(() => {
+    // Get the source page from sessionStorage
+    const storedSourcePage = sessionStorage.getItem('sourcePage');
+    if (storedSourcePage) {
+      setSourcePage(storedSourcePage);
+    }
+
     const fetchListing = async () => {
       console.log('useEffect triggered with ID:', id);
       
@@ -245,9 +252,9 @@ export function ListingDetailsScreen() {
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
           <p className="text-destructive text-lg mb-4">{error || 'Listing not found'}</p>
-          <Button onClick={() => navigate('/listings')}>
+          <Button onClick={() => navigate(sourcePage)}>
             <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Listings
+            Back to {sourcePage === '/approvals' ? 'Approvals' : 'Listings'}
           </Button>
         </div>
       </div>
@@ -264,11 +271,11 @@ export function ListingDetailsScreen() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => navigate('/listings')}
+                onClick={() => navigate(sourcePage)}
                 className="flex items-center gap-2"
               >
                 <ArrowLeft className="w-4 h-4" />
-                Back to Listings
+                Back to {sourcePage === '/approvals' ? 'Approvals' : 'Listings'}
               </Button>
               <Separator orientation="vertical" className="h-6" />
               <div>

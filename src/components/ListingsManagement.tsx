@@ -350,6 +350,7 @@ export function ListingsManagement() {
                             // Store the listing data in sessionStorage so details screen can access it
                             sessionStorage.setItem('currentListing', JSON.stringify(listing));
                             sessionStorage.setItem('usingMockData', JSON.stringify(usingMockData));
+                            sessionStorage.setItem('sourcePage', '/listings'); // Store the source page
                             
                             navigate(`/listings/${listing.id}`);
                           }}
@@ -363,7 +364,13 @@ export function ListingsManagement() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => navigate(`/listings/${listing.id}`)}>
+                            <DropdownMenuItem onClick={() => {
+                              // Store the listing data in sessionStorage so details screen can access it
+                              sessionStorage.setItem('currentListing', JSON.stringify(listing));
+                              sessionStorage.setItem('usingMockData', JSON.stringify(usingMockData));
+                              sessionStorage.setItem('sourcePage', '/listings'); // Store the source page
+                              navigate(`/listings/${listing.id}`);
+                            }}>
                               View Details
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleStatusChange(listing.id, 'approved')}>

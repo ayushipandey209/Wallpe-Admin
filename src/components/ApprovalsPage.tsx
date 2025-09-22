@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Check, X, Eye, MessageSquare, Clock, CheckCircle, XCircle, Loader2, Filter } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -12,11 +13,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { ListingService, type ListingWithDetails } from '../services/listingService';
 
 export function ApprovalsPage() {
+  const navigate = useNavigate();
   const [listings, setListings] = useState<ListingWithDetails[]>([]);
   const [selectedListings, setSelectedListings] = useState<string[]>([]);
   const [approvalReason, setApprovalReason] = useState('');
   const [selectedListing, setSelectedListing] = useState<ListingWithDetails | null>(null);
-  const [activeFilter, setActiveFilter] = useState<'all' | 'pending' | 'approved' | 'denied'>('all');
+  const [activeFilter, setActiveFilter] = useState<'pending' | 'approved' | 'denied'>('pending');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -57,8 +59,6 @@ export function ApprovalsPage() {
         return filtered.filter(listing => listing.list_status === 'approved');
       case 'denied':
         return filtered.filter(listing => listing.list_status === 'rejected');
-      default:
-        return filtered;
     }
   };
 
@@ -125,6 +125,16 @@ export function ApprovalsPage() {
     }
   };
 
+  const handleViewDetails = (listing: ListingWithDetails) => {
+    // Store the listing data in sessionStorage so details screen can access it
+    sessionStorage.setItem('currentListing', JSON.stringify(listing));
+    sessionStorage.setItem('usingMockData', 'false'); // Since we're fetching from database
+    sessionStorage.setItem('sourcePage', '/approvals'); // Store the source page
+    
+    // Navigate to the details screen
+    navigate(`/listings/${listing.id}`);
+  };
+
 
   const getTypeBadge = (type: string) => {
     const colors = {
@@ -177,7 +187,6 @@ export function ApprovalsPage() {
     }
 
     return {
-      all: baseListings.length,
       pending: baseListings.filter(l => l.list_status === 'pending').length,
       approved: baseListings.filter(l => l.list_status === 'approved').length,
       denied: baseListings.filter(l => l.list_status === 'rejected').length
@@ -280,13 +289,7 @@ export function ApprovalsPage() {
 
       {/* Filter Tabs */}
       <Tabs value={activeFilter} onValueChange={(value) => setActiveFilter(value as any)}>
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="all" className="flex items-center gap-2">
-            All
-            <Badge variant="secondary" className="ml-1 text-xs">
-              {counts.all}
-            </Badge>
-          </TabsTrigger>
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="pending" className="flex items-center gap-2">
             <Clock className="w-4 h-4" />
             Pending
@@ -324,11 +327,11 @@ export function ApprovalsPage() {
                 <Check className="w-4 h-4 mr-2" />
                 Bulk Approve
               </Button>
-              <Button 
-                size="sm" 
-                variant="destructive" 
-                onClick={() => handleBulkApproval('denied')}
-              >
+               <Button 
+                 size="sm" 
+                 variant="destructive" 
+                 onClick={() => handleBulkApproval('rejected')}
+               >
                 <X className="w-4 h-4 mr-2" />
                 Bulk Deny
               </Button>
@@ -374,10 +377,10 @@ export function ApprovalsPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredListings.map((listing) => (
-              <Card key={listing.id} className="relative">
+              <Card key={listing.id} className="relative cursor-pointer hover:shadow-lg transition-shadow" onClick={() => handleViewDetails(listing)}>
                 {/* Checkbox - Only for pending listings */}
                 {activeFilter === 'pending' && (
-                  <div className="absolute top-4 left-4 z-10">
+                  <div className="absolute top-4 left-4 z-10" onClick={(e) => e.stopPropagation()}>
                     <Checkbox
                       checked={selectedListings.includes(listing.id)}
                       onCheckedChange={(checked) => handleSelectListing(listing.id, checked as boolean)}
@@ -389,118 +392,18 @@ export function ApprovalsPage() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
                       {getTypeBadge(listing.type)}
-                      {getStatusBadge(listing.status)}
+                       {getStatusBadge(listing.list_status)}
                     </div>
-                    <Dialog>
-                      <DialogTrigger asChild>
-                        <Button 
-                          size="sm" 
-                          variant="ghost" 
-                          onClick={() => setSelectedListing(listing)}
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-                        <DialogHeader>
-                          <DialogTitle>Listing Review - {listing.name}</DialogTitle>
-                        </DialogHeader>
-                        {selectedListing && (
-                          <div className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                              <div>
-                                <Label className="text-sm text-muted-foreground">User</Label>
-                                <p>{selectedListing.profile?.name || 'Unknown User'}</p>
-                              </div>
-                              <div>
-                                <Label className="text-sm text-muted-foreground">Type</Label>
-                                <p className="capitalize">{selectedListing.type}</p>
-                              </div>
-                              {selectedListing.length_ft && selectedListing.width_ft && (
-                                <div>
-                                  <Label className="text-sm text-muted-foreground">Dimensions</Label>
-                                  <p>{selectedListing.length_ft}' × {selectedListing.width_ft}'</p>
-                                </div>
-                              )}
-                              <div>
-                                <Label className="text-sm text-muted-foreground">Date Submitted</Label>
-                                <p>{new Date(selectedListing.created_at || '').toLocaleDateString()}</p>
-                              </div>
-                            </div>
-                            <div>
-                              <Label className="text-sm text-muted-foreground">Location</Label>
-                              <p>
-                                {selectedListing.address ? 
-                                  `${selectedListing.address.address_line1 || ''} ${selectedListing.address.city || ''}`.trim() || 
-                                  `${selectedListing.address.district || ''}, ${selectedListing.address.state || ''}`.trim() :
-                                  'Location not specified'
-                                }
-                              </p>
-                            </div>
-                            {selectedListing.notes && (
-                              <div>
-                                <Label className="text-sm text-muted-foreground">Notes</Label>
-                                <p>{selectedListing.notes}</p>
-                              </div>
-                            )}
-                            {selectedListing.media && selectedListing.media.length > 0 && (
-                              <div>
-                                <Label className="text-sm text-muted-foreground">Images</Label>
-                                <div className="grid grid-cols-2 gap-2 mt-2">
-                                  {selectedListing.media.map((media, index) => (
-                                    <img
-                                      key={index}
-                                      src={media.url}
-                                      alt={`Listing ${index + 1}`}
-                                      className="w-full h-32 object-cover rounded-lg border"
-                                    />
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            <div className="space-y-2">
-                              <Label htmlFor="decision-reason">Approval/Denial Reason</Label>
-                              <Textarea
-                                id="decision-reason"
-                                placeholder="Enter reason for your decision..."
-                                value={approvalReason}
-                                onChange={(e) => setApprovalReason(e.target.value)}
-                              />
-                            </div>
-                            <div className="flex gap-2 pt-4">
-                              {selectedListing.list_status === 'pending' ? (
-                                <>
-                                  <Button 
-                                    className="flex-1"
-                                    onClick={() => handleApproval(selectedListing.id, 'approved', approvalReason)}
-                                  >
-                                    <Check className="w-4 h-4 mr-2" />
-                                    Approve
-                                  </Button>
-                                  <Button 
-                                    variant="destructive"
-                                    className="flex-1"
-                                    onClick={() => handleApproval(selectedListing.id, 'rejected', approvalReason)}
-                                  >
-                                    <X className="w-4 h-4 mr-2" />
-                                    Deny
-                                  </Button>
-                                </>
-                              ) : (
-                                <Button 
-                                  variant="outline"
-                                  className="flex-1"
-                                  onClick={() => handleApproval(selectedListing.id, 'pending', approvalReason)}
-                                >
-                                  <Clock className="w-4 h-4 mr-2" />
-                                  Re-review
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </DialogContent>
-                    </Dialog>
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleViewDetails(listing);
+                      }}
+                    >
+                      <Eye className="w-4 h-4" />
+                    </Button>
                   </div>
                   <div>
                     <CardTitle className="text-lg">{listing.name}</CardTitle>
@@ -555,7 +458,7 @@ export function ApprovalsPage() {
                   </div>
 
                   {/* Quick Action Buttons */}
-                  <div className="flex gap-2 pt-2">
+                  <div className="flex gap-2 pt-2" onClick={(e) => e.stopPropagation()}>
                     {listing.list_status === 'pending' ? (
                       <>
                         <Button 
@@ -617,20 +520,12 @@ export function ApprovalsPage() {
                       There are no approved listings to display.
                     </p>
                   </>
-                ) : activeFilter === 'denied' ? (
+                ) : (
                   <>
                     <XCircle className="w-12 h-12 text-red-500 mb-4" />
                     <h3 className="text-lg font-medium mb-2">No rejected listings</h3>
                     <p className="text-muted-foreground text-center">
                       There are no rejected listings to display.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <Clock className="w-12 h-12 text-gray-500 mb-4" />
-                    <h3 className="text-lg font-medium mb-2">No listings found</h3>
-                    <p className="text-muted-foreground text-center">
-                      There are no listings to display.
                     </p>
                   </>
                 )}
