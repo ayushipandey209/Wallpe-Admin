@@ -34,6 +34,7 @@ export function DashboardOverview() {
   const [timelineData, setTimelineData] = useState<TimelineDataPoint[]>([]);
   const [typeData, setTypeData] = useState<ListingTypeDataPoint[]>([]);
   const [recentActivity, setRecentActivity] = useState<RecentActivityItem[]>([]);
+  const [totalUserCount, setTotalUserCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -43,22 +44,25 @@ export function DashboardOverview() {
         
         
         // Fetch all data in parallel
-        const [stats, timeline, type, activity] = await Promise.all([
+        const [stats, timeline, type, activity, userCount] = await Promise.all([
           ListingService.getListingStats(),
           AnalyticsService.getListingsTimelineData(),
           AnalyticsService.getListingTypeData(),
-          AnalyticsService.getRecentActivity(5)
+          AnalyticsService.getRecentActivity(5),
+          AnalyticsService.getTotalUserCount()
         ]);
         
         console.log('Fetched listing stats:', stats);
         console.log('Fetched timeline data:', timeline);
         console.log('Fetched type data:', type);
         console.log('Fetched recent activity:', activity);
+        console.log('Fetched user count:', userCount);
         
         setListingStats(stats);
         setTimelineData(timeline);
         setTypeData(type);
         setRecentActivity(activity);
+        setTotalUserCount(userCount);
       } catch (error) {
         console.error('Error fetching data:', error);
         // Fallback to mock data if there's an error
@@ -67,6 +71,7 @@ export function DashboardOverview() {
           byType: { wall: 450, shop: 320, vehicle: 280, land: 197 },
           byStatus: { pending: mockKPIs[1].value, approved: 1000, rejected: 50 }
         });
+        setTotalUserCount(1247); // Fallback user count
         // Fallback timeline data
         setTimelineData([
           { month: 'Jan', listings: 45 },
@@ -146,9 +151,9 @@ export function DashboardOverview() {
       trend: 'up' as const 
     },
     { 
-      label: 'Monthly Revenue', 
-      value: 45650, 
-      change: 23.7, 
+      label: 'Total Users', 
+      value: totalUserCount, 
+      change: 12.5, 
       trend: 'up' as const 
     }
   ] : mockKPIs;

@@ -199,6 +199,92 @@ export class AnalyticsService {
   }
 
   /**
+   * Get total user count from profile table
+   */
+  static async getTotalUserCount(): Promise<number> {
+    try {
+      console.log('Fetching total user count...');
+      
+      const { count, error } = await supabase
+        .from('profile')
+        .select('*', { count: 'exact', head: true });
+
+      if (error) {
+        console.error('Error fetching total user count:', error);
+        throw error;
+      }
+
+      console.log('Total user count:', count);
+      return count || 0;
+    } catch (error) {
+      console.error('Error in getTotalUserCount:', error);
+      // Return 0 as fallback
+      return 0;
+    }
+  }
+
+  /**
+   * Get monthly user count data (simple count by month)
+   * Fetches real data from the database grouped by month
+   */
+  static async getMonthlyUserCountData(year?: number): Promise<TimelineDataPoint[]> {
+    try {
+      console.log('Fetching monthly user count data...');
+      
+      // Get current year if not specified
+      const targetYear = year || new Date().getFullYear();
+      
+      // Query to get users grouped by month
+      const { data, error } = await supabase
+        .from('profile')
+        .select('created_at')
+        .gte('created_at', `${targetYear}-01-01`)
+        .lt('created_at', `${targetYear + 1}-01-01`);
+
+      if (error) {
+        console.error('Error fetching monthly user count data:', error);
+        throw error;
+      }
+
+      // Group data by month
+      const monthlyCounts: Record<string, number> = {};
+      
+      // Initialize all months with 0
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      monthNames.forEach(month => {
+        monthlyCounts[month] = 0;
+      });
+
+      // Count users per month
+      data?.forEach(user => {
+        const date = new Date(user.created_at);
+        const monthIndex = date.getMonth();
+        const monthName = monthNames[monthIndex];
+        monthlyCounts[monthName] = (monthlyCounts[monthName] || 0) + 1;
+      });
+
+      // Convert to array format expected by charts
+      const userCountData: TimelineDataPoint[] = monthNames.map(month => ({
+        month,
+        listings: monthlyCounts[month] // Using listings field for consistency with existing chart structure
+      }));
+
+      console.log('Generated monthly user count data:', userCountData);
+      return userCountData;
+    } catch (error) {
+      console.error('Error in getMonthlyUserCountData:', error);
+      // Return empty data as fallback
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 
+                         'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return monthNames.map(month => ({
+        month,
+        listings: 0
+      }));
+    }
+  }
+
+  /**
    * Get analytics data for a specific date range
    */
   static async getAnalyticsDataRange(

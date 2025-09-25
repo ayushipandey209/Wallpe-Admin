@@ -9,32 +9,20 @@ import { AnalyticsService, type TimelineDataPoint, type ListingTypeDataPoint, ty
 
 const chartConfig: ChartConfig = {
   listings: {
-    label: 'Listings',
+    label: 'Users',
     color: 'hsl(var(--chart-1))',
-  },
-  revenue: {
-    label: 'Revenue',
-    color: 'hsl(var(--chart-2))',
   },
   users: {
     label: 'Users',
-    color: 'hsl(var(--chart-3))',
+    color: 'hsl(var(--chart-2))',
   },
   campaigns: {
     label: 'Campaigns',
-    color: 'hsl(var(--chart-4))',
+    color: 'hsl(var(--chart-3))',
   },
 };
 
 // Extended mock data for analytics
-const revenueData = [
-  { month: 'Jan', revenue: 45000, target: 50000 },
-  { month: 'Feb', revenue: 52000, target: 55000 },
-  { month: 'Mar', revenue: 48000, target: 53000 },
-  { month: 'Apr', revenue: 61000, target: 58000 },
-  { month: 'May', revenue: 55000, target: 60000 },
-  { month: 'Jun', revenue: 67000, target: 65000 },
-];
 
 const engagementData = [
   { month: 'Jan', views: 12000, clicks: 1200, conversions: 240 },
@@ -59,7 +47,8 @@ export function AnalyticsPage() {
   const [reportType, setReportType] = useState('overview');
   const [timelineData, setTimelineData] = useState<TimelineDataPoint[]>([]);
   const [typeData, setTypeData] = useState<ListingTypeDataPoint[]>([]);
-  const [userActivityData, setUserActivityData] = useState<UserActivityDataPoint[]>([]);
+  const [userCountData, setUserCountData] = useState<TimelineDataPoint[]>([]);
+  const [totalUserCount, setTotalUserCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -68,17 +57,19 @@ export function AnalyticsPage() {
         setLoading(true);
         
         // Fetch all analytics data in parallel
-        const [timeline, type, userActivity] = await Promise.all([
+        const [timeline, type, userCount, totalUsers] = await Promise.all([
           AnalyticsService.getListingsTimelineData(),
           AnalyticsService.getListingTypeData(),
-          AnalyticsService.getUserActivityData()
+          AnalyticsService.getMonthlyUserCountData(),
+          AnalyticsService.getTotalUserCount()
         ]);
         
-        console.log('Fetched analytics data:', { timeline, type, userActivity });
+        console.log('Fetched analytics data:', { timeline, type, userCount, totalUsers });
         
         setTimelineData(timeline);
         setTypeData(type);
-        setUserActivityData(userActivity);
+        setUserCountData(userCount);
+        setTotalUserCount(totalUsers);
       } catch (error) {
         console.error('Error fetching analytics data:', error);
         // Fallback to mock data if there's an error
@@ -96,14 +87,15 @@ export function AnalyticsPage() {
           { type: 'Vehicle', count: 280, fill: 'var(--chart-3)' },
           { type: 'Land', count: 197, fill: 'var(--chart-4)' }
         ]);
-        setUserActivityData([
-          { month: 'Jan', newUsers: 23, activeUsers: 142 },
-          { month: 'Feb', newUsers: 31, activeUsers: 158 },
-          { month: 'Mar', newUsers: 28, activeUsers: 163 },
-          { month: 'Apr', newUsers: 45, activeUsers: 180 },
-          { month: 'May', newUsers: 38, activeUsers: 195 },
-          { month: 'Jun', newUsers: 52, activeUsers: 210 }
+        setUserCountData([
+          { month: 'Jan', listings: 0 },
+          { month: 'Feb', listings: 0 },
+          { month: 'Mar', listings: 0 },
+          { month: 'Apr', listings: 0 },
+          { month: 'May', listings: 0 },
+          { month: 'Jun', listings: 0 }
         ]);
+        setTotalUserCount(0);
       } finally {
         setLoading(false);
       }
@@ -164,23 +156,35 @@ export function AnalyticsPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+            <CardTitle className="text-sm font-medium">Total Users</CardTitle>
             <TrendingUp className="w-4 h-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">₹3,48,000</div>
-            <p className="text-xs text-green-600">+12.5% from last period</p>
+            <div className="text-2xl font-bold">
+              {loading ? (
+                <div className="animate-pulse bg-gray-200 h-8 w-16 rounded"></div>
+              ) : (
+                totalUserCount.toLocaleString()
+              )}
+            </div>
+            <p className="text-xs text-green-600">Total registered users</p>
           </CardContent>
         </Card>
         
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Avg. Revenue/Listing</CardTitle>
+            <CardTitle className="text-sm font-medium">This Month</CardTitle>
             <Calendar className="w-4 h-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">₹27,880</div>
-            <p className="text-xs text-blue-600">+8.2% from last period</p>
+            <div className="text-2xl font-bold">
+              {loading ? (
+                <div className="animate-pulse bg-gray-200 h-8 w-16 rounded"></div>
+              ) : (
+                userCountData[userCountData.length - 1]?.listings || 0
+              )}
+            </div>
+            <p className="text-xs text-blue-600">New users this month</p>
           </CardContent>
         </Card>
         
@@ -209,38 +213,29 @@ export function AnalyticsPage() {
 
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Revenue Trends */}
+        {/* Monthly User Count */}
         <Card>
           <CardHeader>
-            <CardTitle>Revenue Trends</CardTitle>
-            <CardDescription>Monthly revenue vs targets</CardDescription>
+            <CardTitle>Monthly User Count</CardTitle>
+            <CardDescription>New users registered by month</CardDescription>
           </CardHeader>
           <CardContent>
             <ChartContainer config={chartConfig} className="h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={revenueData}>
+                <AreaChart data={userCountData}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" />
                   <YAxis />
                   <ChartTooltip 
                     content={<ChartTooltipContent />}
                     formatter={(value, name) => [
-                      `₹${value.toLocaleString()}`, 
-                      name === 'revenue' ? 'Revenue' : 'Target'
+                      value.toLocaleString(), 
+                      'Users'
                     ]}
                   />
                   <Area
                     type="monotone"
-                    dataKey="target"
-                    stackId="1"
-                    stroke="var(--chart-3)"
-                    fill="var(--chart-3)"
-                    fillOpacity={0.3}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="revenue"
-                    stackId="2"
+                    dataKey="listings"
                     stroke="var(--chart-2)"
                     fill="var(--chart-2)"
                     fillOpacity={0.6}
