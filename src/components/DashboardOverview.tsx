@@ -146,9 +146,9 @@ export function DashboardOverview() {
     },
     { 
       label: 'Active Campaigns', 
-      value: listingStats.byStatus.approved || 0, 
-      change: 15.3, 
-      trend: 'up' as const 
+      value: 0, 
+      change: 0, 
+      trend: 'neutral' as const 
     },
     { 
       label: 'Total Users', 

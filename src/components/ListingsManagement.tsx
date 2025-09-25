@@ -215,15 +215,6 @@ export function ListingsManagement() {
       <Card>
         <CardHeader>
           <CardTitle>Listings Management</CardTitle>
-          <div className="mt-4">
-            <Button 
-              onClick={() => navigate('/listings/test-listing-id')}
-              variant="outline"
-              size="sm"
-            >
-              Test Details Screen
-            </Button>
-          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Search and Filters */}
