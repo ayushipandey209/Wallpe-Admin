@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Send, Bell, Calendar, User, Users, Filter, Search } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Send, Bell, Calendar, User, Users, Filter, Search, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -11,24 +11,53 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from './ui/label';
 import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import { Checkbox } from './ui/checkbox';
-import { mockNotifications, mockUsers, type Notification } from '../data/mockData';
+import { NotificationService, type Notification, type NotificationCreate } from '../services/notificationService';
+import { ProfileService, type ProfileWithStats } from '../services/profileService';
 
 export function NotificationsPage() {
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [users, setUsers] = useState<ProfileWithStats[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   
   // New notification form state
-  const [newNotification, setNewNotification] = useState({
+  const [newNotification, setNewNotification] = useState<NotificationCreate>({
     title: '',
     message: '',
-    type: 'info' as 'info' | 'success' | 'warning' | 'error',
-    recipientType: 'individual' as 'individual' | 'group' | 'all',
-    selectedUsers: [] as string[],
-    scheduleType: 'now' as 'now' | 'later',
+    type: 'info',
+    recipientType: 'individual',
+    selectedUsers: [],
+    scheduleType: 'now',
     scheduleDate: ''
   });
+
+  // Load data on component mount
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        const [notificationsData, usersData] = await Promise.all([
+          NotificationService.getAllNotifications(),
+          NotificationService.getUsersForNotification()
+        ]);
+        
+        setNotifications(notificationsData);
+        setUsers(usersData);
+      } catch (err) {
+        console.error('Error loading data:', err);
+        setError('Failed to load notifications and user data. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, []);
 
   // Filter notifications
   const filteredNotifications = notifications.filter(notification => {
@@ -43,43 +72,30 @@ export function NotificationsPage() {
     return matchesSearch && matchesStatus && matchesType;
   });
 
-  const handleSendNotification = () => {
+  const handleSendNotification = async () => {
     if (!newNotification.title || !newNotification.message) return;
 
-    const recipients = newNotification.recipientType === 'all' 
-      ? ['All Users']
-      : newNotification.recipientType === 'group'
-        ? ['Selected Group']
-        : newNotification.selectedUsers.map(userId => 
-            mockUsers.find(u => u.id === userId)?.name || 'Unknown User'
-          );
+    try {
+      setLoading(true);
+      const newNotifications = await NotificationService.createNotification(newNotification);
+      setNotifications(prev => [...newNotifications, ...prev]);
 
-    recipients.forEach((recipient, index) => {
-      const notification: Notification = {
-        id: `notif-${Date.now()}-${index}`,
-        title: newNotification.title,
-        message: newNotification.message,
-        type: newNotification.type,
-        date: newNotification.scheduleType === 'now' 
-          ? new Date().toISOString().split('T')[0]
-          : newNotification.scheduleDate,
-        status: newNotification.scheduleType === 'now' ? 'sent' : 'scheduled',
-        recipient: recipient
-      };
-      
-      setNotifications(prev => [notification, ...prev]);
-    });
-
-    // Reset form
-    setNewNotification({
-      title: '',
-      message: '',
-      type: 'info',
-      recipientType: 'individual',
-      selectedUsers: [],
-      scheduleType: 'now',
-      scheduleDate: ''
-    });
+      // Reset form
+      setNewNotification({
+        title: '',
+        message: '',
+        type: 'info',
+        recipientType: 'individual',
+        selectedUsers: [],
+        scheduleType: 'now',
+        scheduleDate: ''
+      });
+    } catch (err) {
+      console.error('Error sending notification:', err);
+      setError('Failed to send notification. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const getStatusBadge = (status: string) => {
@@ -104,6 +120,38 @@ export function NotificationsPage() {
       </Badge>
     );
   };
+
+  if (loading && notifications.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="flex items-center space-x-2">
+          <Loader2 className="w-6 h-6 animate-spin" />
+          <span>Loading notifications...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-center text-red-600">
+              <p>{error}</p>
+              <Button 
+                onClick={() => window.location.reload()} 
+                className="mt-4"
+                variant="outline"
+              >
+                Retry
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -189,7 +237,7 @@ export function NotificationsPage() {
               <div className="space-y-2">
                 <Label>Select Users</Label>
                 <div className="max-h-32 overflow-y-auto space-y-2 border rounded-lg p-2">
-                  {mockUsers.map((user) => (
+                  {users.map((user) => (
                     <div key={user.id} className="flex items-center space-x-2">
                       <Checkbox
                         id={user.id}
@@ -209,7 +257,7 @@ export function NotificationsPage() {
                         }}
                       />
                       <Label htmlFor={user.id} className="text-sm">
-                        {user.name} ({user.email})
+                        {user.name} ({user.phone || 'No phone'})
                       </Label>
                     </div>
                   ))}
@@ -251,12 +299,16 @@ export function NotificationsPage() {
 
           <Button 
             onClick={handleSendNotification}
-            disabled={!newNotification.title || !newNotification.message || 
+            disabled={loading || !newNotification.title || !newNotification.message || 
               (newNotification.recipientType === 'individual' && newNotification.selectedUsers.length === 0)}
             className="w-full"
           >
-            <Send className="w-4 h-4 mr-2" />
-            {newNotification.scheduleType === 'now' ? 'Send Now' : 'Schedule Notification'}
+            {loading ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4 mr-2" />
+            )}
+            {loading ? 'Sending...' : (newNotification.scheduleType === 'now' ? 'Send Now' : 'Schedule Notification')}
           </Button>
         </CardContent>
       </Card>
