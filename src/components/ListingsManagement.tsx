@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, Filter, Download, Check, X, Search, MoreHorizontal, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -14,6 +14,7 @@ import { mockListings } from '../data/mockData';
 
 export function ListingsManagement() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [listings, setListings] = useState<ListingWithDetails[]>([]);
   const [selectedListings, setSelectedListings] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -22,6 +23,14 @@ export function ListingsManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [usingMockData, setUsingMockData] = useState(false);
+
+  // Handle URL parameters on component mount
+  useEffect(() => {
+    const statusParam = searchParams.get('status');
+    if (statusParam) {
+      setStatusFilter(statusParam);
+    }
+  }, [searchParams]);
 
   // Fetch listings on component mount
   useEffect(() => {

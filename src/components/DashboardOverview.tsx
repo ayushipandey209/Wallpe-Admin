@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { TrendingUp, TrendingDown, Minus, Eye, Calendar, MapPin, User } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
@@ -26,6 +27,7 @@ const chartConfig: ChartConfig = {
 };
 
 export function DashboardOverview() {
+  const navigate = useNavigate();
   const [listingStats, setListingStats] = useState<{
     total: number;
     byType: Record<string, number>;
@@ -129,6 +131,16 @@ export function DashboardOverview() {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(value);
   };
 
+  const handleKPIClick = (kpiLabel: string) => {
+    if (kpiLabel === 'Total Listings') {
+      navigate('/listings');
+    } else if (kpiLabel === 'Pending Approvals') {
+      navigate('/listings?status=pending');
+    } else if (kpiLabel === 'Total Users') {
+      navigate('/users');
+    }
+  };
+
 
   // Create real KPIs from database data
   const realKPIs = listingStats ? [
@@ -163,7 +175,11 @@ export function DashboardOverview() {
       {/* KPIs Row */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {realKPIs.map((kpi, index) => (
-          <Card key={index}>
+          <Card 
+            key={index} 
+            className={`${(kpi.label === 'Total Listings' || kpi.label === 'Pending Approvals' || kpi.label === 'Total Users') ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+            onClick={() => handleKPIClick(kpi.label)}
+          >
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">{kpi.label}</CardTitle>
               {getTrendIcon(kpi.trend)}
