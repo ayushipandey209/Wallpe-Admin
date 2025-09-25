@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Check, X, MapPin, User, Calendar, Phone, Ruler, Image as ImageIcon, Loader2, ChevronLeft, ChevronRight, Star, Clock, Shield, Truck, Award } from 'lucide-react';
+import { ArrowLeft, Check, X, MapPin, User, Calendar, Phone, Ruler, Image as ImageIcon, Loader2, ChevronLeft, ChevronRight, Star, Clock, Shield, Truck, Award, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
 import { ListingService, type ListingWithDetails } from '../services/listingService';
 import { supabase } from '../services/supabase';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -15,6 +16,7 @@ export function ListingDetailsScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [sourcePage, setSourcePage] = useState<string>('/listings'); // Default to listings
 
@@ -177,6 +179,22 @@ export function ListingDetailsScreen() {
       setError('Failed to update listing status. Please try again.');
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!listing) return;
+
+    try {
+      setDeleteLoading(true);
+      await ListingService.deleteListing(listing.id);
+      // Navigate back to listings page after successful deletion
+      navigate('/listings');
+    } catch (err) {
+      console.error('Error deleting listing:', err);
+      setError('Failed to delete listing. Please try again.');
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -411,6 +429,39 @@ export function ListingDetailsScreen() {
                   <X className="w-6 h-6 mr-2" />
                   {actionLoading ? 'Processing...' : 'Reject Listing'}
                 </button>
+                
+                {/* Delete Button with Confirmation Dialog */}
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <button
+                      className="w-full h-12 text-lg font-semibold bg-gray-600 hover:bg-gray-700 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 border-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                      disabled={deleteLoading}
+                      style={{ backgroundColor: '#4b5563', color: 'white' }}
+                    >
+                      <Trash2 className="w-6 h-6 mr-2" />
+                      {deleteLoading ? 'Deleting...' : 'Delete Listing'}
+                    </button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This action cannot be undone. This will permanently delete the listing
+                        "{listing?.name}" and remove all associated data from the database.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <Button
+                        onClick={handleDelete}
+                        variant="destructive"
+                        disabled={deleteLoading}
+                      >
+                        {deleteLoading ? 'Deleting...' : 'Delete'}
+                      </Button>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               </div>
               
               {/* Status Info */}
