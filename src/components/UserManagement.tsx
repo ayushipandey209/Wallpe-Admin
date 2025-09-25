@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, UserX, UserCheck, Send, Eye, MoreHorizontal, Loader2, Download } from 'lucide-react';
+import { Search, UserX, UserCheck, Send, Eye, MoreHorizontal, Loader2, Download, Trash2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { ProfileService, type ProfileWithStats } from '../services';
 
@@ -22,6 +23,7 @@ export function UserManagement() {
   const [error, setError] = useState<string | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState<string | null>(null);
   const [downloadingContacts, setDownloadingContacts] = useState<string | null>(null);
+  const [deletingUser, setDeletingUser] = useState<string | null>(null);
 
   // Fetch users from Supabase
   useEffect(() => {
@@ -89,6 +91,30 @@ export function UserManagement() {
       setError('Failed to update user status');
     } finally {
       setUpdatingStatus(null);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string) => {
+    try {
+      setDeletingUser(userId);
+      setError(null);
+      
+      // Delete the user from Supabase
+      await ProfileService.deleteProfile(userId);
+      
+      // Remove the user from local state
+      setUsers(users.filter(user => user.id !== userId));
+      
+      // Clear selected user if it's the deleted user
+      if (selectedUser && selectedUser.id === userId) {
+        setSelectedUser(null);
+      }
+      
+    } catch (err) {
+      console.error('Error deleting user:', err);
+      setError('Failed to delete user');
+    } finally {
+      setDeletingUser(null);
     }
   };
 
@@ -309,7 +335,41 @@ export function UserManagement() {
                           </DialogTrigger>
                           <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
                             <DialogHeader>
-                              <DialogTitle>User Profile - {user.name}</DialogTitle>
+                              <div className="flex items-center justify-between pr-8">
+                                <DialogTitle>User Profile - {user.name}</DialogTitle>
+                                <AlertDialog>
+                                  <AlertDialogTrigger asChild>
+                                    <Button
+                                      variant="destructive"
+                                      size="sm"
+                                      disabled={deletingUser === user.id}
+                                      className="ml-4"
+                                    >
+                                      <Trash2 className="w-4 h-4 mr-2" />
+                                      {deletingUser === user.id ? 'Deleting...' : 'Delete User'}
+                                    </Button>
+                                  </AlertDialogTrigger>
+                                  <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                      <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                      <AlertDialogDescription>
+                                        This action cannot be undone. This will permanently delete the user
+                                        "{user.name}" and remove all associated data from the database.
+                                      </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                      <AlertDialogAction
+                                        onClick={() => handleDeleteUser(user.id)}
+                                        className="bg-red-600 hover:bg-red-700"
+                                        disabled={deletingUser === user.id}
+                                      >
+                                        {deletingUser === user.id ? 'Deleting...' : 'Delete'}
+                                      </AlertDialogAction>
+                                    </AlertDialogFooter>
+                                  </AlertDialogContent>
+                                </AlertDialog>
+                              </div>
                             </DialogHeader>
                             {selectedUser && (
                               <div className="space-y-6">

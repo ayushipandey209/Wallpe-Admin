@@ -495,25 +495,48 @@ export function ListingDetailsScreen() {
                   <div>
                     <p className="text-sm text-gray-600 font-medium">Dimensions</p>
                     <p className="text-lg font-bold text-gray-900">
-                      {listing.length_ft && listing.width_ft 
-                        ? `${listing.length_ft}ft × ${listing.width_ft}ft`
-                        : 'Not specified'
-                      }
+                      {(() => {
+                        const hasLength = listing.length_ft || listing.length_in;
+                        const hasWidth = listing.width_ft || listing.width_in;
+                        
+                        if (!hasLength || !hasWidth) {
+                          return 'Not specified';
+                        }
+                        
+                        const lengthStr = listing.length_ft 
+                          ? `${listing.length_ft}ft${listing.length_in ? ` ${listing.length_in}in` : ''}`
+                          : `${listing.length_in}in`;
+                        const widthStr = listing.width_ft 
+                          ? `${listing.width_ft}ft${listing.width_in ? ` ${listing.width_in}in` : ''}`
+                          : `${listing.width_in}in`;
+                        
+                        return `${lengthStr} × ${widthStr}`;
+                      })()}
                     </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4 p-6 bg-green-50 rounded-xl border border-green-100">
-                  <div className="p-3 bg-green-100 rounded-lg">
-                    <Award className="w-6 h-6 text-green-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600 font-medium">Total Area</p>
-                    <p className="text-lg font-bold text-gray-900">
-                      {listing.length_ft && listing.width_ft 
-                        ? `${listing.length_ft * listing.width_ft} sq ft`
-                        : 'Not calculated'
+                    {(() => {
+                      const hasLength = listing.length_ft || listing.length_in;
+                      const hasWidth = listing.width_ft || listing.width_in;
+                      
+                      if (!hasLength || !hasWidth) {
+                        return null;
                       }
-                    </p>
+                      
+                      // Convert everything to inches for accurate calculation
+                      const totalLengthInches = (listing.length_ft || 0) * 12 + (listing.length_in || 0);
+                      const totalWidthInches = (listing.width_ft || 0) * 12 + (listing.width_in || 0);
+                      
+                      // Calculate area in square inches
+                      const areaInches = totalLengthInches * totalWidthInches;
+                      
+                      // Convert to square feet (1 sq ft = 144 sq in)
+                      const areaSqFt = areaInches / 144;
+                      
+                      return (
+                        <p className="text-sm text-gray-500 mt-1">
+                          Area: {areaSqFt.toFixed(2)} sq ft
+                        </p>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -527,48 +550,6 @@ export function ListingDetailsScreen() {
               </div>
             )}
 
-            {/* Space Specifications */}
-            <div className="space-y-6">
-              <h3 className="text-xl font-bold text-gray-900">Space Specifications</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-xl border-2 border-gray-200">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-3 bg-blue-100 rounded-lg">
-                      <Ruler className="w-6 h-6 text-blue-600" />
-                    </div>
-                    <p className="text-sm text-gray-600 font-medium">Length (Feet)</p>
-                  </div>
-                  <p className="text-2xl font-bold text-gray-900">{listing.length_ft || 'N/A'}</p>
-                </div>
-                <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-xl border-2 border-gray-200">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-3 bg-green-100 rounded-lg">
-                      <Ruler className="w-6 h-6 text-green-600" />
-                    </div>
-                    <p className="text-sm text-gray-600 font-medium">Width (Feet)</p>
-                  </div>
-                  <p className="text-2xl font-bold text-gray-900">{listing.width_ft || 'N/A'}</p>
-                </div>
-                <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-xl border-2 border-gray-200">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-3 bg-purple-100 rounded-lg">
-                      <Ruler className="w-6 h-6 text-purple-600" />
-                    </div>
-                    <p className="text-sm text-gray-600 font-medium">Length (Inches)</p>
-                  </div>
-                  <p className="text-2xl font-bold text-gray-900">{listing.length_in || 'N/A'}</p>
-                </div>
-                <div className="bg-gradient-to-br from-gray-50 to-gray-100 p-6 rounded-xl border-2 border-gray-200">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-3 bg-orange-100 rounded-lg">
-                      <Ruler className="w-6 h-6 text-orange-600" />
-                    </div>
-                    <p className="text-sm text-gray-600 font-medium">Width (Inches)</p>
-                  </div>
-                  <p className="text-2xl font-bold text-gray-900">{listing.width_in || 'N/A'}</p>
-                </div>
-              </div>
-            </div>
 
             {/* Contact Information */}
             <div className="space-y-4">
