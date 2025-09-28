@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Send, Bell, Calendar, User, Users, Filter, Search, Gift, CheckCircle, PlusCircle, Trash2, Star, Target, Eye, Smartphone, Clock, Palette, Timer, AlertTriangle, Zap, Image, Link, ExternalLink, FileImage, Film } from 'lucide-react';
+import React, { useState } from 'react';
+import { Send, Bell, Calendar, User, Users, Filter, Search, Gift, CheckCircle, PlusCircle, Trash2, Star, Target, Eye, Smartphone, Clock, Palette, Timer, AlertTriangle, Zap, Image, Link, ExternalLink, FileImage, Film, Upload, File, X } from 'lucide-react';
 import { AdvancedUserSelector } from './AdvancedUserSelector';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -16,7 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Separator } from './ui/separator';
 import { mockNotifications, mockUsers, type Notification } from '../data/mockData';
 
-type NotificationMediaType = 'none' | 'image' | 'gif';
+type NotificationMediaType = 'none' | 'image' | 'gif' | 'file' | 'video';
 
 type EnhancedNotification = {
   id: string;
@@ -88,6 +88,7 @@ export function NotificationsPage() {
       mediaUrl: 'https://images.unsplash.com/photo-1557804506-669a67965ba0?w=400',
       mediaAltText: 'Welcome image',
       deepLink: 'wallpe://dashboard',
+      scheduleType: 'now',
       date: '2024-09-25',
       status: 'sent',
       recipient: 'All Users (45,232)'
@@ -100,6 +101,7 @@ export function NotificationsPage() {
       deliveryType: 'push',
       mediaType: 'none',
       externalUrl: 'https://wallpe.com/verify',
+      scheduleType: 'now',
       date: '2024-09-24',
       status: 'sent',
       recipient: 'Unverified Users (2,847)'
@@ -171,6 +173,11 @@ export function NotificationsPage() {
     scheduleType: 'now' as 'now' | 'later',
     scheduleDate: ''
   });
+
+  // File upload state
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
 
   // User selection state for general notifications
   const [userSelection, setUserSelection] = useState({
@@ -396,6 +403,50 @@ export function NotificationsPage() {
     setNewNotification({ ...newNotification, mediaUrl: url });
   };
 
+  // File upload handlers
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File size must be less than 10MB');
+      return;
+    }
+
+    setUploadedFile(file);
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    // Simulate file upload progress
+    const uploadInterval = setInterval(() => {
+      setUploadProgress(prev => {
+        if (prev >= 100) {
+          clearInterval(uploadInterval);
+          setIsUploading(false);
+          // Set the media URL to the uploaded file (in real app, this would be the server URL)
+          setNewNotification({ 
+            ...newNotification, 
+            mediaUrl: URL.createObjectURL(file),
+            mediaAltText: file.name
+          });
+          return 100;
+        }
+        return prev + 10;
+      });
+    }, 200);
+  };
+
+  const removeUploadedFile = () => {
+    setUploadedFile(null);
+    setUploadProgress(0);
+    setNewNotification({ 
+      ...newNotification, 
+      mediaUrl: '', 
+      mediaAltText: '' 
+    });
+  };
+
   const addQuestion = () => {
     const newQuestion: SurveyQuestion = {
       id: (newOfferNotification.questions.length + 1).toString(),
@@ -577,7 +628,7 @@ export function NotificationsPage() {
     };
 
     const renderDeliveryPreviews = () => {
-      const previews = [];
+      const previews: React.ReactNode[] = [];
       
       if (notification.deliveryType === 'in-app' || notification.deliveryType === 'both') {
         previews.push(
@@ -998,7 +1049,11 @@ export function NotificationsPage() {
                   <Label>Media Options</Label>
                   <Select 
                     value={newNotification.mediaType} 
-                    onValueChange={(value: NotificationMediaType) => setNewNotification({...newNotification, mediaType: value, mediaUrl: '', mediaAltText: ''})}
+                    onValueChange={(value: NotificationMediaType) => {
+                      setNewNotification({...newNotification, mediaType: value, mediaUrl: '', mediaAltText: ''});
+                      setUploadedFile(null);
+                      setUploadProgress(0);
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -1008,13 +1063,25 @@ export function NotificationsPage() {
                       <SelectItem value="image">
                         <div className="flex items-center gap-2">
                           <Image className="w-4 h-4" />
-                          Image
+                          Image URL
                         </div>
                       </SelectItem>
                       <SelectItem value="gif">
                         <div className="flex items-center gap-2">
                           <Film className="w-4 h-4" />
-                          GIF
+                          GIF URL
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="file">
+                        <div className="flex items-center gap-2">
+                          <Upload className="w-4 h-4" />
+                          Upload File
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="video">
+                        <div className="flex items-center gap-2">
+                          <Film className="w-4 h-4" />
+                          Upload Video
                         </div>
                       </SelectItem>
                     </SelectContent>
@@ -1022,18 +1089,87 @@ export function NotificationsPage() {
 
                   {newNotification.mediaType !== 'none' && (
                     <div className="space-y-2">
-                      <div className="grid grid-cols-1 gap-2">
-                        <Input
-                          placeholder={`${newNotification.mediaType === 'image' ? 'Image' : 'GIF'} URL...`}
-                          value={newNotification.mediaUrl}
-                          onChange={(e) => setNewNotification({...newNotification, mediaUrl: e.target.value})}
-                        />
-                        <Input
-                          placeholder="Alt text / Description..."
-                          value={newNotification.mediaAltText}
-                          onChange={(e) => setNewNotification({...newNotification, mediaAltText: e.target.value})}
-                        />
-                      </div>
+                      {(newNotification.mediaType === 'image' || newNotification.mediaType === 'gif') && (
+                        <div className="grid grid-cols-1 gap-2">
+                          <Input
+                            placeholder={`${newNotification.mediaType === 'image' ? 'Image' : 'GIF'} URL...`}
+                            value={newNotification.mediaUrl}
+                            onChange={(e) => setNewNotification({...newNotification, mediaUrl: e.target.value})}
+                          />
+                          <Input
+                            placeholder="Alt text / Description..."
+                            value={newNotification.mediaAltText}
+                            onChange={(e) => setNewNotification({...newNotification, mediaAltText: e.target.value})}
+                          />
+                        </div>
+                      )}
+
+                      {(newNotification.mediaType === 'file' || newNotification.mediaType === 'video') && (
+                        <div className="space-y-3">
+                          {/* File Upload Area */}
+                          <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 text-center hover:border-muted-foreground/50 transition-colors">
+                            <input
+                              type="file"
+                              id="file-upload"
+                              className="hidden"
+                              accept={newNotification.mediaType === 'video' ? 'video/*' : '*/*'}
+                              onChange={handleFileUpload}
+                              disabled={isUploading}
+                            />
+                            <label htmlFor="file-upload" className="cursor-pointer">
+                              {isUploading ? (
+                                <div className="space-y-2">
+                                  <Upload className="w-8 h-8 mx-auto text-primary animate-pulse" />
+                                  <div className="text-sm text-muted-foreground">Uploading... {uploadProgress}%</div>
+                                  <div className="w-full bg-muted rounded-full h-2">
+                                    <div 
+                                      className="bg-primary h-2 rounded-full transition-all duration-300" 
+                                      style={{ width: `${uploadProgress}%` }}
+                                    ></div>
+                                  </div>
+                                </div>
+                              ) : uploadedFile ? (
+                                <div className="space-y-2">
+                                  <File className="w-8 h-8 mx-auto text-green-600" />
+                                  <div className="text-sm font-medium">{uploadedFile.name}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {(uploadedFile.size / 1024 / 1024).toFixed(2)} MB
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={removeUploadedFile}
+                                    className="mt-2"
+                                  >
+                                    <X className="w-4 h-4 mr-2" />
+                                    Remove
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div className="space-y-2">
+                                  <Upload className="w-8 h-8 mx-auto text-muted-foreground" />
+                                  <div className="text-sm font-medium">
+                                    Click to upload {newNotification.mediaType === 'video' ? 'video' : 'file'}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    Max size: 10MB
+                                  </div>
+                                </div>
+                              )}
+                            </label>
+                          </div>
+
+                          {/* File Description */}
+                          {newNotification.mediaType === 'file' && (
+                            <Input
+                              placeholder="File description (optional)..."
+                              value={newNotification.mediaAltText}
+                              onChange={(e) => setNewNotification({...newNotification, mediaAltText: e.target.value})}
+                            />
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
