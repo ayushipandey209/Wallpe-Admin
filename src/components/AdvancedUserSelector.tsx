@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { User, Users, Filter, Search, Target, Check, X, ChevronDown, Users2, UserCheck, Globe } from 'lucide-react';
+import { User, Users, Filter, Search, Target, Check, X, ChevronDown, Users2, UserCheck, Globe, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Checkbox } from './ui/checkbox';
 import { Label } from './ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
-import { mockUsers } from '../data/mockData';
+import { ProfileService, type ProfileWithStats } from '../services/profileService';
 
 export interface UserSelection {
   type: 'individual' | 'group' | 'criteria' | 'all';
@@ -61,19 +61,62 @@ const criteriaOptions = {
 };
 
 export function AdvancedUserSelector({ onSelectionChange, initialSelection }: AdvancedUserSelectorProps) {
+  const [users, setUsers] = useState<ProfileWithStats[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
   const [selection, setSelection] = useState<UserSelection>(
     initialSelection || {
       type: 'all',
       userIds: [],
       groupIds: [],
       criteria: {},
-      estimatedCount: mockUsers.length
+      estimatedCount: 0
     }
   );
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [showUserList, setShowUserList] = useState(false);
+
+  // Fetch user count on mount
+  useEffect(() => {
+    const fetchUserCount = async () => {
+      try {
+        const fetchedUsers = await ProfileService.getAllProfiles();
+        setSelection(prev => ({ ...prev, estimatedCount: fetchedUsers.length }));
+      } catch (err) {
+        console.error('Error fetching user count:', err);
+      }
+    };
+
+    fetchUserCount();
+  }, []);
+
+  // Fetch users from the service when individual or all selection is shown
+  useEffect(() => {
+    const fetchUsers = async () => {
+      if ((selection.type === 'individual' && showUserList) || (selection.type === 'all')) {
+        setLoading(true);
+        setError(null);
+        try {
+          const fetchedUsers = await ProfileService.getAllProfiles();
+          setUsers(fetchedUsers);
+          // Update estimated count for 'all' selection
+          if (selection.type === 'all') {
+            setSelection(prev => ({ ...prev, estimatedCount: fetchedUsers.length }));
+          }
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Failed to fetch users');
+          console.error('Error fetching users:', err);
+        } finally {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchUsers();
+  }, [selection.type, showUserList]);
 
   // Update parent component when selection changes
   useEffect(() => {
@@ -182,15 +225,14 @@ export function AdvancedUserSelector({ onSelectionChange, initialSelection }: Ad
     const newSelection = {
       ...selection,
       criteria: newCriteria,
-      estimatedCount: Math.min(estimatedCount, mockUsers.length) // Cap at total users
+      estimatedCount: Math.min(estimatedCount, users.length || selection.estimatedCount) // Cap at total users
     };
     setSelection(newSelection);
   };
 
-  const filteredUsers = mockUsers.filter(user =>
-    user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.phone.includes(searchQuery)
+  const filteredUsers = users.filter(user =>
+    (user.name && user.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+    (user.phone && user.phone.includes(searchQuery))
   );
 
   const renderIndividualSelection = () => (
@@ -222,21 +264,39 @@ export function AdvancedUserSelector({ onSelectionChange, initialSelection }: Ad
           </div>
 
           <div className="max-h-64 overflow-y-auto border rounded-lg">
-            {filteredUsers.map((user) => (
-              <div key={user.id} className="flex items-center space-x-3 p-3 border-b last:border-b-0">
-                <Checkbox
-                  checked={selectedUsers.includes(user.id)}
-                  onCheckedChange={(checked) => handleUserToggle(user.id, checked as boolean)}
-                />
-                <div className="flex-1">
-                  <div className="font-medium text-sm">{user.name}</div>
-                  <div className="text-xs text-muted-foreground">{user.email}</div>
-                </div>
-                <Badge variant={user.status === 'active' ? 'default' : 'secondary'} className="text-xs">
-                  {user.status}
-                </Badge>
+            {loading ? (
+              <div className="flex items-center justify-center p-8">
+                <Loader2 className="w-6 h-6 animate-spin" />
+                <span className="ml-2 text-sm text-muted-foreground">Loading users...</span>
               </div>
-            ))}
+            ) : error ? (
+              <div className="flex items-center justify-center p-8 text-red-600">
+                <span className="text-sm">{error}</span>
+              </div>
+            ) : filteredUsers.length === 0 ? (
+              <div className="flex items-center justify-center p-8 text-muted-foreground">
+                <span className="text-sm">No users found</span>
+              </div>
+            ) : (
+              filteredUsers.map((user) => (
+                <div key={user.id} className="flex items-center space-x-3 p-3 border-b last:border-b-0">
+                  <Checkbox
+                    checked={selectedUsers.includes(user.id)}
+                    onCheckedChange={(checked) => handleUserToggle(user.id, checked as boolean)}
+                  />
+                  <div className="flex-1">
+                    <div className="font-medium text-sm">{user.name || 'Unnamed User'}</div>
+                    <div className="text-xs text-muted-foreground">{user.phone}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {user.totalListings || 0} listings • {user.activeCampaigns || 0} active
+                    </div>
+                  </div>
+                  <Badge variant={user.status === 'Active' ? 'default' : 'secondary'} className="text-xs">
+                    {user.status || 'Unknown'}
+                  </Badge>
+                </div>
+              ))
+            )}
           </div>
         </div>
       )}
@@ -318,14 +378,81 @@ export function AdvancedUserSelector({ onSelectionChange, initialSelection }: Ad
 
   const renderAllUsersSelection = () => (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <Globe className="w-4 h-4" />
-        <span className="text-sm font-medium">All Users</span>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Globe className="w-4 h-4" />
+          <span className="text-sm font-medium">All Users</span>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setShowUserList(!showUserList)}
+        >
+          {showUserList ? 'Hide List' : 'Show List'}
+        </Button>
       </div>
+
       <div className="bg-muted/30 rounded-lg p-4 text-center">
-        <div className="text-2xl font-bold text-primary">{mockUsers.length.toLocaleString()}</div>
-        <div className="text-sm text-muted-foreground">Total registered users</div>
+        <div className="text-2xl font-bold text-primary">
+          {loading ? (
+            <Loader2 className="w-6 h-6 animate-spin mx-auto" />
+          ) : (
+            selection.estimatedCount.toLocaleString()
+          )}
+        </div>
+        <div className="text-sm text-muted-foreground">
+          {loading ? 'Loading user count...' : 'Total registered users'}
+        </div>
       </div>
+
+      {showUserList && (
+        <div className="space-y-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search users..."
+              className="pl-10"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+
+          <div className="max-h-64 overflow-y-auto border rounded-lg">
+            {loading ? (
+              <div className="flex items-center justify-center p-8">
+                <Loader2 className="w-6 h-6 animate-spin" />
+                <span className="ml-2 text-sm text-muted-foreground">Loading users...</span>
+              </div>
+            ) : error ? (
+              <div className="flex items-center justify-center p-8 text-red-600">
+                <span className="text-sm">{error}</span>
+              </div>
+            ) : filteredUsers.length === 0 ? (
+              <div className="flex items-center justify-center p-8 text-muted-foreground">
+                <span className="text-sm">No users found</span>
+              </div>
+            ) : (
+              filteredUsers.map((user) => (
+                <div key={user.id} className="flex items-center space-x-3 p-3 border-b last:border-b-0">
+                  <div className="w-4 h-4 flex items-center justify-center">
+                    <Check className="w-4 h-4 text-green-600" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-medium text-sm">{user.name || 'Unnamed User'}</div>
+                    <div className="text-xs text-muted-foreground">{user.phone}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {user.totalListings || 0} listings • {user.activeCampaigns || 0} active
+                    </div>
+                  </div>
+                  <Badge variant={user.status === 'Active' ? 'default' : 'secondary'} className="text-xs">
+                    {user.status || 'Unknown'}
+                  </Badge>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 
