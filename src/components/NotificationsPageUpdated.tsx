@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Send, Bell, Calendar, User, Users, Filter, Search, Gift, CheckCircle, PlusCircle, Trash2, Star, Target, Eye, Smartphone, Clock, Palette, Timer, AlertTriangle, Zap } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Send, Bell, Calendar, User, Users, Filter, Search, Gift, CheckCircle, PlusCircle, Trash2, Star, Target, Eye, Smartphone, Clock, Palette, Timer, AlertTriangle, Zap, Image, Link, ExternalLink, FileImage, Film, Upload, File, X } from 'lucide-react';
 import { AdvancedUserSelector } from './AdvancedUserSelector';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
@@ -14,7 +14,8 @@ import { RadioGroup, RadioGroupItem } from './ui/radio-group';
 import { Checkbox } from './ui/checkbox';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Separator } from './ui/separator';
-import { mockNotifications, mockUsers, type Notification } from '../data/mockData';
+import { GeneralNotificationService, type GeneralNotification, type GeneralNotificationCreate } from '../services/generalNotificationService';
+import { mockUsers, type Notification } from '../data/mockData';
 
 type OfferNotification = {
   id: string;
@@ -56,8 +57,10 @@ type TaskRequirement = {
   required: boolean;
 };
 
+type NotificationMediaType = 'none' | 'image' | 'gif' | 'file' | 'video';
+
 export function NotificationsPage() {
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
+  const [notifications, setNotifications] = useState<GeneralNotification[]>([]);
   const [offerNotifications, setOfferNotifications] = useState<OfferNotification[]>([
     {
       id: 'offer-1',
@@ -112,11 +115,22 @@ export function NotificationsPage() {
   // New notification form state
   const [newNotification, setNewNotification] = useState({
     title: '',
-    message: '',
-    type: 'info' as 'info' | 'success' | 'warning' | 'error',
-    scheduleType: 'now' as 'now' | 'later',
-    scheduleDate: ''
+    description: '',
+    noti_type: 'info' as 'info' | 'success' | 'warning' | 'error',
+    delivery_type: 'both' as 'in-app' | 'push' | 'both',
+    media_type: 'none' as NotificationMediaType,
+    media_url: '',
+    media_alt_text: '',
+    deep_link: '',
+    external_url: '',
+    schedule_type: 'now' as 'now' | 'later',
+    schedule_date: ''
   });
+
+  // File upload state
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
 
   // User selection state for general notifications
   const [userSelection, setUserSelection] = useState({
@@ -154,76 +168,222 @@ export function NotificationsPage() {
     taskRequirements: [{ id: '1', title: '', description: '', type: 'action' as const, required: true }] as TaskRequirement[]
   });
 
+  // Load notifications on component mount
+  useEffect(() => {
+    loadNotifications();
+  }, []);
+
+  const loadNotifications = async () => {
+    try {
+      const data = await GeneralNotificationService.getAllNotifications();
+      setNotifications(data);
+    } catch (error) {
+      console.error('Error loading notifications:', error);
+    }
+  };
+
   // Filter notifications
   const filteredNotifications = notifications.filter(notification => {
     const matchesSearch = !searchQuery || 
       notification.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      notification.message.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      notification.recipient.toLowerCase().includes(searchQuery.toLowerCase());
+      (notification.description && notification.description.toLowerCase().includes(searchQuery.toLowerCase()));
     
-    const matchesStatus = statusFilter === 'all' || notification.status === statusFilter;
-    const matchesType = typeFilter === 'all' || notification.type === typeFilter;
+    const matchesStatus = statusFilter === 'all' || (statusFilter === 'sent' && !notification.scheduled_at) || (statusFilter === 'scheduled' && notification.scheduled_at);
+    const matchesType = typeFilter === 'all' || notification.noti_type === typeFilter;
     
     return matchesSearch && matchesStatus && matchesType;
   });
 
-  const handleSendNotification = () => {
-    if (!newNotification.title || !newNotification.message) return;
-
-    let recipient = '';
-    switch (userSelection.type) {
-      case 'all':
-        recipient = `All Users (${userSelection.estimatedCount.toLocaleString()})`;
-        break;
-      case 'individual':
-        recipient = `${userSelection.userIds.length} Selected Users`;
-        break;
-      case 'group':
-        recipient = `${userSelection.groupIds.length} Groups (${userSelection.estimatedCount.toLocaleString()} users)`;
-        break;
-      case 'criteria':
-        recipient = `Smart Filter (${userSelection.estimatedCount.toLocaleString()} users)`;
-        break;
+  const handleSendNotification = async () => {
+    if (!newNotification.title || !newNotification.description) {
+      console.log('❌ Missing required fields:', { title: newNotification.title, description: newNotification.description });
+      alert('Please fill in both title and description fields');
+      return;
     }
 
-    const notification: Notification = {
-      id: `notif-${Date.now()}`,
-      title: newNotification.title,
-      message: newNotification.message,
-      type: newNotification.type,
-      date: newNotification.scheduleType === 'now' 
-        ? new Date().toISOString().split('T')[0]
-        : newNotification.scheduleDate,
-      status: newNotification.scheduleType === 'now' ? 'sent' : 'scheduled',
-      recipient: recipient
-    };
-    
-    setNotifications(prev => [notification, ...prev]);
+    console.log('🎯 Starting notification send process...');
+    console.log('📋 Form data:', newNotification);
+    console.log('🔍 Notification type being sent:', newNotification.noti_type, '(type:', typeof newNotification.noti_type, ')');
+    console.log('👥 User selection:', userSelection);
 
-    // Reset form
-    setNewNotification({
-      title: '',
-      message: '',
-      type: 'info',
-      scheduleType: 'now',
-      scheduleDate: ''
-    });
-    setUserSelection({
-      type: 'all',
-      userIds: [],
-      groupIds: [],
-      criteria: {},
-      estimatedCount: 0
+    try {
+      // Map recipient type
+      let recipientType: 'all_users' | 'individual' | 'groups' | 'smart_filter' = 'all_users';
+      
+      switch (userSelection.type) {
+        case 'all':
+          recipientType = 'all_users';
+          break;
+        case 'individual':
+          recipientType = 'individual';
+          break;
+        case 'group':
+          recipientType = 'groups';
+          break;
+        case 'criteria':
+          recipientType = 'smart_filter';
+          break;
+      }
+
+      // For individual users, send separate notifications to each selected user
+      if (userSelection.type === 'individual' && userSelection.userIds.length > 0) {
+        console.log(`📤 Sending notifications to ${userSelection.userIds.length} individual users...`);
+        
+        const createdNotifications: GeneralNotification[] = [];
+        
+        for (const userId of userSelection.userIds) {
+          const notificationData: GeneralNotificationCreate = {
+            title: newNotification.title,
+            description: newNotification.description,
+            noti_type: newNotification.noti_type,
+            media_url: newNotification.media_url || undefined,
+            deep_link: newNotification.deep_link || undefined,
+            external_url: newNotification.external_url || undefined,
+            delivery_type: newNotification.delivery_type,
+            recipient_type: 'individual',
+            recipient_id: userId,
+            scheduled_at: newNotification.schedule_type === 'later' ? newNotification.schedule_date : undefined
+          };
+
+          console.log(`📤 Sending notification to user ${userId}:`, notificationData);
+
+          let createdNotification: GeneralNotification;
+          
+          if (newNotification.schedule_type === 'now') {
+            createdNotification = await GeneralNotificationService.sendNotificationNow(notificationData);
+          } else {
+            createdNotification = await GeneralNotificationService.scheduleNotification(notificationData, newNotification.schedule_date);
+          }
+
+          console.log(`✅ Notification sent to user ${userId}:`, createdNotification);
+          createdNotifications.push(createdNotification);
+        }
+
+        // Add all created notifications to local state
+        setNotifications(prev => [...createdNotifications, ...prev]);
+
+        console.log(`🎉 Successfully sent ${createdNotifications.length} notifications to individual users!`);
+        alert(`Successfully sent ${createdNotifications.length} notification(s) to ${userSelection.userIds.length} individual user(s)!`);
+
+      } else {
+        // For other recipient types, send a single notification
+        console.log('🎯 Mapped recipient type:', { recipientType });
+
+        const notificationData: GeneralNotificationCreate = {
+          title: newNotification.title,
+          description: newNotification.description,
+          noti_type: newNotification.noti_type,
+          media_url: newNotification.media_url || undefined,
+          deep_link: newNotification.deep_link || undefined,
+          external_url: newNotification.external_url || undefined,
+          delivery_type: newNotification.delivery_type,
+          recipient_type: recipientType,
+          recipient_id: undefined,
+          scheduled_at: newNotification.schedule_type === 'later' ? newNotification.schedule_date : undefined
+        };
+
+        console.log('📤 Prepared notification data:', notificationData);
+
+        let createdNotification: GeneralNotification;
+        
+        if (newNotification.schedule_type === 'now') {
+          console.log('⚡ Sending notification immediately...');
+          createdNotification = await GeneralNotificationService.sendNotificationNow(notificationData);
+        } else {
+          console.log('⏰ Scheduling notification for later...');
+          createdNotification = await GeneralNotificationService.scheduleNotification(notificationData, newNotification.schedule_date);
+        }
+
+        console.log('✅ Notification created successfully:', createdNotification);
+
+        // Add to local state
+        setNotifications(prev => [createdNotification, ...prev]);
+
+        console.log('🎉 Notification process completed successfully!');
+        alert('Notification sent successfully!');
+      }
+
+      // Reset form
+      setNewNotification({
+        title: '',
+        description: '',
+        noti_type: 'info',
+        delivery_type: 'both',
+        media_type: 'none',
+        media_url: '',
+        media_alt_text: '',
+        deep_link: '',
+        external_url: '',
+        schedule_type: 'now',
+        schedule_date: ''
+      });
+      setUserSelection({
+        type: 'all',
+        userIds: [],
+        groupIds: [],
+        criteria: {},
+        estimatedCount: 0
+      });
+      setUploadedFile(null);
+      setUploadProgress(0);
+
+    } catch (error) {
+      console.error('❌ Error sending notification:', error);
+      alert(`Failed to send notification: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  // File upload handlers
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File size must be less than 10MB');
+      return;
+    }
+
+    setUploadedFile(file);
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    try {
+      // Upload file to Supabase storage
+      const result = await GeneralNotificationService.uploadMedia(file);
+      
+      // Update notification with media URL
+      setNewNotification({ 
+        ...newNotification, 
+        media_url: result.url,
+        media_alt_text: file.name
+      });
+      
+      setIsUploading(false);
+      setUploadProgress(100);
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      setIsUploading(false);
+      setUploadProgress(0);
+      alert('Failed to upload file. Please try again.');
+    }
+  };
+
+  const removeUploadedFile = () => {
+    setUploadedFile(null);
+    setUploadProgress(0);
+    setNewNotification({ 
+      ...newNotification, 
+      media_url: '', 
+      media_alt_text: '' 
     });
   };
 
-  const getStatusBadge = (status: string) => {
-    const variants = {
-      sent: 'default' as const,
-      scheduled: 'secondary' as const,
-      pending: 'outline' as const
-    };
-    return <Badge variant={variants[status as keyof typeof variants] || 'secondary'}>{status}</Badge>;
+  const getStatusBadge = (notification: GeneralNotification) => {
+    if (notification.scheduled_at) {
+      return <Badge variant="secondary">Scheduled</Badge>;
+    }
+    return <Badge variant="default">Sent</Badge>;
   };
 
   const getTypeBadge = (type: string) => {
@@ -473,11 +633,19 @@ export function NotificationsPage() {
 
   // Preview Components
   const GeneralNotificationPreview = ({ notification }: { notification: typeof newNotification }) => {
-    if (!notification.title && !notification.message) {
+    if (!notification.title && !notification.description) {
       return (
-        <div className="text-center py-8 text-muted-foreground">
-          <Smartphone className="w-12 h-12 mx-auto mb-4 opacity-50" />
-          <p>Fill out the form to see preview</p>
+        <div className="space-y-4 bg-gray-50 p-6 rounded-lg border border-dashed border-gray-300">
+          <div className="text-center py-8 text-muted-foreground">
+            <Smartphone className="w-16 h-16 mx-auto mb-4 opacity-50" />
+            <h3 className="text-lg font-medium mb-2">Preview Not Available</h3>
+            <p className="text-sm">Fill out the form above to see a live preview of your notification</p>
+            <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+              <p className="text-xs text-blue-700">
+                💡 <strong>Tip:</strong> Add a title and description to see how your notification will appear on mobile devices
+              </p>
+            </div>
+          </div>
         </div>
       );
     }
@@ -492,19 +660,29 @@ export function NotificationsPage() {
     };
 
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 bg-gray-50 p-4 rounded-lg border">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Eye className="w-4 h-4" />
           Mobile App Preview
         </div>
         
         {/* Realistic Mobile mockup */}
-        <div className="max-w-sm mx-auto relative">
+        <div 
+          className="max-w-sm mx-auto relative cursor-pointer hover:scale-105 transition-transform duration-200 group"
+          onClick={() => {
+            alert(`Preview: Mobile notification "${notification.title}"`);
+          }}
+        >
+          {/* Click indicator */}
+          <div className="absolute -top-2 -right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20">
+            Click to preview
+          </div>
+          
           {/* Phone Frame */}
-          <div className="bg-gray-900 rounded-[2.5rem] p-2 shadow-2xl">
+          <div className="bg-gray-900 rounded-[2.5rem] p-2 shadow-2xl border-2 border-gray-700 group-hover:border-blue-400 transition-colors duration-200">
             {/* Screen */}
             <div className="bg-black rounded-[2.25rem] p-1">
-              <div className="bg-white rounded-[2rem] overflow-hidden min-h-[500px] relative">
+              <div className="bg-white rounded-[2rem] overflow-hidden min-h-[500px] relative shadow-inner">
                 {/* Notch/Dynamic Island */}
                 <div className="absolute top-2 left-1/2 transform -translate-x-1/2 w-24 h-6 bg-black rounded-full z-10"></div>
                 
@@ -541,7 +719,7 @@ export function NotificationsPage() {
             <div className="bg-gray-50 rounded-lg p-4 space-y-3">
               <div className="flex items-start gap-3">
                 <div className="mt-1">
-                  {getTypeIcon(notification.type)}
+                  {getTypeIcon(notification.noti_type)}
                 </div>
                 <div className="flex-1 space-y-2">
                   <div className="flex items-center justify-between">
@@ -551,8 +729,59 @@ export function NotificationsPage() {
                   {notification.title && (
                     <h3 className="font-medium text-sm">{notification.title}</h3>
                   )}
-                  {notification.message && (
-                    <p className="text-sm text-gray-600">{notification.message}</p>
+                  {notification.description && (
+                    <p className="text-sm text-gray-600">{notification.description}</p>
+                  )}
+                  {notification.media_type !== 'none' && notification.media_url && (
+                    <div className="mt-2">
+                      {notification.media_type === 'image' && (
+                        <img 
+                          src={notification.media_url} 
+                          alt={notification.media_alt_text || 'Notification image'} 
+                          className="rounded-lg max-w-full h-32 object-cover"
+                        />
+                      )}
+                      {notification.media_type === 'gif' && (
+                        <div className="flex items-center gap-2 p-2 bg-muted rounded-lg">
+                          <Film className="w-4 h-4" />
+                          <span className="text-sm">GIF: {notification.media_alt_text || 'Animation'}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {(notification.deep_link || notification.external_url) && (
+                    <div className="flex gap-2 mt-2">
+                      {notification.deep_link && (
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="text-xs hover:bg-blue-50 transition-colors"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            alert(`Preview: Opening deep link "${notification.deep_link}"`);
+                          }}
+                        >
+                          <Link className="w-3 h-3 mr-1" />
+                          Open in App
+                        </Button>
+                      )}
+                      {notification.external_url && (
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="text-xs hover:bg-blue-50 transition-colors"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            alert(`Preview: Opening external URL "${notification.external_url}"`);
+                          }}
+                        >
+                          <ExternalLink className="w-3 h-3 mr-1" />
+                          View More
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -575,9 +804,17 @@ export function NotificationsPage() {
   const OfferNotificationPreview = ({ offer }: { offer: typeof newOfferNotification }) => {
     if (!offer.title && !offer.description) {
       return (
-        <div className="text-center py-8 text-muted-foreground">
-          <Smartphone className="w-12 h-12 mx-auto mb-4 opacity-50" />
-          <p>Fill out the form to see preview</p>
+        <div className="space-y-4 bg-gray-50 p-6 rounded-lg border border-dashed border-gray-300">
+          <div className="text-center py-8 text-muted-foreground">
+            <Smartphone className="w-16 h-16 mx-auto mb-4 opacity-50" />
+            <h3 className="text-lg font-medium mb-2">Preview Not Available</h3>
+            <p className="text-sm">Fill out the form above to see a live preview of your offer notification</p>
+            <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+              <p className="text-xs text-blue-700">
+                💡 <strong>Tip:</strong> Add a title and description to see how your offer will appear in the mobile app
+              </p>
+            </div>
+          </div>
         </div>
       );
     }
@@ -592,24 +829,34 @@ export function NotificationsPage() {
     };
 
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 bg-gray-50 p-4 rounded-lg border">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Eye className="w-4 h-4" />
           Wallet Page Preview
         </div>
         
         {/* Realistic Mobile mockup */}
-        <div className="max-w-sm mx-auto relative">
+        <div 
+          className="max-w-sm mx-auto relative cursor-pointer hover:scale-105 transition-transform duration-200 group"
+          onClick={() => {
+            alert(`Preview: Mobile app showing "${offer.title}" offer notification`);
+          }}
+        >
+          {/* Click indicator */}
+          <div className="absolute -top-2 -right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20">
+            Click to preview
+          </div>
+          
           {/* Phone Frame */}
-          <div className="bg-gray-900 rounded-[2.5rem] p-2 shadow-2xl">
+          <div className="bg-gray-900 rounded-[2.5rem] p-2 shadow-2xl border-2 border-gray-700 group-hover:border-blue-400 transition-colors duration-200">
             {/* Screen */}
             <div className="bg-black rounded-[2.25rem] p-1">
-              <div className="bg-white rounded-[2rem] overflow-hidden min-h-[600px] relative">
+              <div className="bg-white rounded-[2rem] overflow-hidden min-h-[500px] max-h-[700px] relative flex flex-col shadow-inner">
                 {/* Notch/Dynamic Island */}
                 <div className="absolute top-2 left-1/2 transform -translate-x-1/2 w-24 h-6 bg-black rounded-full z-10"></div>
                 
                 {/* Screen Content */}
-                <div className="p-4 pt-10 space-y-4">
+                <div className="p-4 pt-10 space-y-4 flex-1 overflow-y-auto">
                   {/* Status bar */}
                   <div className="flex items-center justify-between text-sm font-medium">
                     <span>9:41</span>
@@ -644,24 +891,24 @@ export function NotificationsPage() {
             
             {/* Offer Card */}
             <div className={`bg-gradient-to-r ${colorSchemes[offer.colorScheme].gradient} text-white rounded-xl p-4 space-y-3 ${offer.urgency === 'urgent' ? 'animate-pulse' : ''}`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1 min-w-0 flex-1">
                   {offer.type === 'survey' ? (
-                    <Star className="w-5 h-5" />
+                    <Star className="w-4 h-4 flex-shrink-0" />
                   ) : (
-                    <Target className="w-5 h-5" />
+                    <Target className="w-4 h-4 flex-shrink-0" />
                   )}
-                  <span className="text-xs font-medium bg-white/20 px-2 py-1 rounded-full">
+                  <span className="text-xs font-medium bg-white/20 px-2 py-1 rounded-full whitespace-nowrap">
                     {offer.type === 'survey' ? 'Survey' : 'Task'}
                   </span>
                   {(offer.urgency === 'high' || offer.urgency === 'urgent') && (
-                    <span className="text-xs font-bold bg-red-500 px-2 py-1 rounded-full flex items-center gap-1">
+                    <span className="text-xs font-bold bg-red-500 px-2 py-1 rounded-full flex items-center gap-1 whitespace-nowrap">
                       {urgencyLevels[offer.urgency].icon}
                       {offer.urgency.toUpperCase()}
                     </span>
                   )}
                 </div>
-                <div className="text-right">
+                <div className="text-right flex-shrink-0">
                   <div className="text-lg font-bold">
                     {offer.rewardType === 'rupees' ? `₹${offer.rewardAmount}` : `${getRewardIcon(offer.rewardType)} ${offer.rewardAmount}`}
                   </div>
@@ -670,30 +917,38 @@ export function NotificationsPage() {
               </div>
               
               {offer.title && (
-                <h3 className="font-semibold">{offer.title}</h3>
+                <h3 className="font-semibold text-sm leading-tight break-words">{offer.title}</h3>
               )}
               
               {offer.description && (
-                <p className="text-sm opacity-90">{offer.description}</p>
+                <p className="text-sm opacity-90 leading-relaxed break-words">{offer.description}</p>
               )}
               
-              <div className="flex items-center justify-between text-xs opacity-75">
+              <div className="flex flex-col gap-2 text-xs opacity-75">
                 {offer.expiryDate && (
                   <div className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    Expires: {new Date(offer.expiryDate).toLocaleDateString()}
+                    <Clock className="w-3 h-3 flex-shrink-0" />
+                    <span className="truncate">Expires: {new Date(offer.expiryDate).toLocaleDateString()}</span>
                   </div>
                 )}
                 {offer.displayDuration && (
                   <div className="flex items-center gap-1">
-                    <Timer className="w-3 h-3" />
-                    Shows for: {offer.displayDuration === 'until-completed' ? 'Until done' : offer.displayDuration}
+                    <Timer className="w-3 h-3 flex-shrink-0" />
+                    <span className="truncate">Shows for: {offer.displayDuration === 'until-completed' ? 'Until done' : offer.displayDuration}</span>
                   </div>
                 )}
               </div>
               
               <div className="pt-2">
-                <Button size="sm" className="w-full bg-white text-blue-600 hover:bg-gray-100">
+                <Button 
+                  size="sm" 
+                  className="w-full bg-white text-blue-600 hover:bg-gray-100 text-xs shadow-md hover:shadow-lg transition-all duration-200"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    alert(`Preview: ${offer.type === 'survey' ? 'Take Survey' : 'Start Task'} - "${offer.title}"`);
+                  }}
+                >
                   {offer.type === 'survey' ? 'Take Survey' : 'Start Task'}
                 </Button>
               </div>
@@ -702,18 +957,19 @@ export function NotificationsPage() {
             {/* Preview content */}
             {offer.type === 'survey' && offer.questions.length > 0 && offer.questions[0].question && (
               <div className="bg-gray-50 rounded-lg p-3 space-y-2">
-                <h4 className="font-medium text-sm">Preview Questions:</h4>
-                <div className="space-y-2 max-h-32 overflow-y-auto">
-                  {offer.questions.slice(0, 3).map((question, index) => (
+                <h4 className="font-medium text-xs">Preview Questions:</h4>
+                <div className="space-y-1 max-h-24 overflow-y-auto">
+                  {offer.questions.slice(0, 2).map((question, index) => (
                     question.question && (
-                      <div key={question.id} className="text-xs">
-                        <span className="font-medium">Q{index + 1}:</span> {question.question}
+                      <div key={question.id} className="text-xs leading-relaxed">
+                        <span className="font-medium">Q{index + 1}:</span> 
+                        <span className="break-words"> {question.question.length > 50 ? question.question.substring(0, 50) + '...' : question.question}</span>
                       </div>
                     )
                   ))}
-                  {offer.questions.length > 3 && (
+                  {offer.questions.length > 2 && (
                     <div className="text-xs text-muted-foreground">
-                      +{offer.questions.length - 3} more questions
+                      +{offer.questions.length - 2} more questions
                     </div>
                   )}
                 </div>
@@ -722,18 +978,19 @@ export function NotificationsPage() {
             
             {offer.type === 'task' && offer.taskRequirements.length > 0 && offer.taskRequirements[0].title && (
               <div className="bg-gray-50 rounded-lg p-3 space-y-2">
-                <h4 className="font-medium text-sm">Preview Tasks:</h4>
-                <div className="space-y-2 max-h-32 overflow-y-auto">
-                  {offer.taskRequirements.slice(0, 3).map((task, index) => (
+                <h4 className="font-medium text-xs">Preview Tasks:</h4>
+                <div className="space-y-1 max-h-24 overflow-y-auto">
+                  {offer.taskRequirements.slice(0, 2).map((task, index) => (
                     task.title && (
-                      <div key={task.id} className="text-xs">
-                        <span className="font-medium">{index + 1}.</span> {task.title}
+                      <div key={task.id} className="text-xs leading-relaxed">
+                        <span className="font-medium">{index + 1}.</span> 
+                        <span className="break-words"> {task.title.length > 40 ? task.title.substring(0, 40) + '...' : task.title}</span>
                       </div>
                     )
                   ))}
-                  {offer.taskRequirements.length > 3 && (
+                  {offer.taskRequirements.length > 2 && (
                     <div className="text-xs text-muted-foreground">
-                      +{offer.taskRequirements.length - 3} more tasks
+                      +{offer.taskRequirements.length - 2} more tasks
                     </div>
                   )}
                 </div>
@@ -741,19 +998,19 @@ export function NotificationsPage() {
             )}
 
                   {/* Bottom Navigation Area */}
-                  <div className="absolute bottom-6 left-4 right-4">
-                    <div className="flex justify-center space-x-8 py-3 bg-gray-50 rounded-2xl">
+                  <div className="absolute bottom-4 left-4 right-4">
+                    <div className="flex justify-center space-x-6 py-2 bg-gray-50 rounded-xl">
                       <div className="flex flex-col items-center">
-                        <div className="w-6 h-6 bg-gray-300 rounded-full"></div>
-                        <div className="w-8 h-1 bg-gray-300 rounded mt-1"></div>
+                        <div className="w-5 h-5 bg-gray-300 rounded-full"></div>
+                        <div className="w-6 h-0.5 bg-gray-300 rounded mt-1"></div>
                       </div>
                       <div className="flex flex-col items-center">
-                        <div className="w-6 h-6 bg-blue-500 rounded-full"></div>
-                        <div className="w-8 h-1 bg-blue-500 rounded mt-1"></div>
+                        <div className="w-5 h-5 bg-blue-500 rounded-full"></div>
+                        <div className="w-6 h-0.5 bg-blue-500 rounded mt-1"></div>
                       </div>
                       <div className="flex flex-col items-center">
-                        <div className="w-6 h-6 bg-gray-300 rounded-full"></div>
-                        <div className="w-8 h-1 bg-gray-300 rounded mt-1"></div>
+                        <div className="w-5 h-5 bg-gray-300 rounded-full"></div>
+                        <div className="w-6 h-0.5 bg-gray-300 rounded mt-1"></div>
                       </div>
                     </div>
                   </div>
@@ -867,8 +1124,11 @@ export function NotificationsPage() {
                 <div className="space-y-2">
                   <Label htmlFor="type">Type</Label>
                   <Select 
-                    value={newNotification.type} 
-                    onValueChange={(value: any) => setNewNotification({...newNotification, type: value})}
+                    value={newNotification.noti_type} 
+                    onValueChange={(value: any) => {
+                      console.log('🔧 Notification type changed from', newNotification.noti_type, 'to', value);
+                      setNewNotification({...newNotification, noti_type: value});
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -884,14 +1144,207 @@ export function NotificationsPage() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="message">Message</Label>
+                <Label htmlFor="description">Description</Label>
                 <Textarea
-                  id="message"
+                  id="description"
                   placeholder="Enter your notification message..."
                   rows={3}
-                  value={newNotification.message}
-                  onChange={(e) => setNewNotification({...newNotification, message: e.target.value})}
+                  value={newNotification.description}
+                  onChange={(e) => setNewNotification({...newNotification, description: e.target.value})}
                 />
+              </div>
+
+              {/* Delivery Type Selection */}
+              <div className="space-y-3">
+                <Label>Delivery Type</Label>
+                <RadioGroup 
+                  value={newNotification.delivery_type} 
+                  onValueChange={(value: any) => setNewNotification({...newNotification, delivery_type: value})}
+                  className="grid grid-cols-3 gap-4"
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="in-app" id="in-app" />
+                    <Label htmlFor="in-app" className="flex items-center gap-2">
+                      <Smartphone className="w-4 h-4" />
+                      In-App Only
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="push" id="push" />
+                    <Label htmlFor="push" className="flex items-center gap-2">
+                      <Bell className="w-4 h-4" />
+                      Push Only
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="both" id="both" />
+                    <Label htmlFor="both" className="flex items-center gap-2">
+                      <Zap className="w-4 h-4" />
+                      Both
+                    </Label>
+                  </div>
+                </RadioGroup>
+              </div>
+
+              {/* Media Options */}
+              <div className="space-y-3">
+                <Label>Media Options</Label>
+                <Select 
+                  value={newNotification.media_type} 
+                  onValueChange={(value: NotificationMediaType) => {
+                    setNewNotification({...newNotification, media_type: value, media_url: '', media_alt_text: ''});
+                    setUploadedFile(null);
+                    setUploadProgress(0);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No Media</SelectItem>
+                    <SelectItem value="image">
+                      <div className="flex items-center gap-2">
+                        <Image className="w-4 h-4" />
+                        Image URL
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="gif">
+                      <div className="flex items-center gap-2">
+                        <Film className="w-4 h-4" />
+                        GIF URL
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="file">
+                      <div className="flex items-center gap-2">
+                        <Upload className="w-4 h-4" />
+                        Upload File
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="video">
+                      <div className="flex items-center gap-2">
+                        <Film className="w-4 h-4" />
+                        Upload Video
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+
+                {newNotification.media_type !== 'none' && (
+                  <div className="space-y-2">
+                    {(newNotification.media_type === 'image' || newNotification.media_type === 'gif') && (
+                      <div className="grid grid-cols-1 gap-2">
+                        <Input
+                          placeholder={`${newNotification.media_type === 'image' ? 'Image' : 'GIF'} URL...`}
+                          value={newNotification.media_url}
+                          onChange={(e) => setNewNotification({...newNotification, media_url: e.target.value})}
+                        />
+                        <Input
+                          placeholder="Alt text / Description..."
+                          value={newNotification.media_alt_text}
+                          onChange={(e) => setNewNotification({...newNotification, media_alt_text: e.target.value})}
+                        />
+                      </div>
+                    )}
+
+                    {(newNotification.media_type === 'file' || newNotification.media_type === 'video') && (
+                      <div className="space-y-3">
+                        {/* File Upload Area */}
+                        <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 text-center hover:border-muted-foreground/50 transition-colors">
+                          <input
+                            type="file"
+                            id="file-upload"
+                            className="hidden"
+                            accept={newNotification.media_type === 'video' ? 'video/*' : '*/*'}
+                            onChange={handleFileUpload}
+                            disabled={isUploading}
+                          />
+                          <label htmlFor="file-upload" className="cursor-pointer">
+                            {isUploading ? (
+                              <div className="space-y-2">
+                                <Upload className="w-8 h-8 mx-auto text-primary animate-pulse" />
+                                <div className="text-sm text-muted-foreground">Uploading... {uploadProgress}%</div>
+                                <div className="w-full bg-muted rounded-full h-2">
+                                  <div 
+                                    className="bg-primary h-2 rounded-full transition-all duration-300" 
+                                    style={{ width: `${uploadProgress}%` }}
+                                  ></div>
+                                </div>
+                              </div>
+                            ) : uploadedFile ? (
+                              <div className="space-y-2">
+                                <File className="w-8 h-8 mx-auto text-green-600" />
+                                <div className="text-sm font-medium">{uploadedFile.name}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {(uploadedFile.size / 1024 / 1024).toFixed(2)} MB
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={removeUploadedFile}
+                                  className="mt-2"
+                                >
+                                  <X className="w-4 h-4 mr-2" />
+                                  Remove
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="space-y-2">
+                                <Upload className="w-8 h-8 mx-auto text-muted-foreground" />
+                                <div className="text-sm font-medium">
+                                  Click to upload {newNotification.media_type === 'video' ? 'video' : 'file'}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  Max size: 10MB
+                                </div>
+                              </div>
+                            )}
+                          </label>
+                        </div>
+
+                        {/* File Description */}
+                        {newNotification.media_type === 'file' && (
+                          <Input
+                            placeholder="File description (optional)..."
+                            value={newNotification.media_alt_text}
+                            onChange={(e) => setNewNotification({...newNotification, media_alt_text: e.target.value})}
+                          />
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Action Links */}
+              <div className="space-y-3">
+                <Label>Action Links (Optional)</Label>
+                <div className="grid grid-cols-1 gap-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="deepLink" className="text-sm flex items-center gap-1">
+                      <Link className="w-3 h-3" />
+                      Deep Link (opens in app)
+                    </Label>
+                    <Input
+                      id="deepLink"
+                      placeholder="wallpe://profile, wallpe://wallet..."
+                      value={newNotification.deep_link}
+                      onChange={(e) => setNewNotification({...newNotification, deep_link: e.target.value})}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="externalUrl" className="text-sm flex items-center gap-1">
+                      <ExternalLink className="w-3 h-3" />
+                      External URL (opens in browser)
+                    </Label>
+                    <Input
+                      id="externalUrl"
+                      placeholder="https://example.com..."
+                      value={newNotification.external_url}
+                      onChange={(e) => setNewNotification({...newNotification, external_url: e.target.value})}
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-3">
@@ -902,19 +1355,32 @@ export function NotificationsPage() {
                 />
                 
                 {userSelection.estimatedCount > 0 && (
-                  <div className="bg-muted/30 rounded-lg p-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      <Target className="w-4 h-4 text-primary" />
-                      <span className="font-medium">
-                        {userSelection.estimatedCount.toLocaleString()} users selected
-                      </span>
-                      <Badge variant="outline">
-                        {userSelection.type === 'all' ? 'All Users' :
-                         userSelection.type === 'individual' ? 'Individual Selection' :
-                         userSelection.type === 'group' ? 'Group Selection' :
-                         'Smart Filter'}
-                      </Badge>
+                  <div className="space-y-2">
+                    <div className="bg-muted/30 rounded-lg p-3">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Target className="w-4 h-4 text-primary" />
+                        <span className="font-medium">
+                          {userSelection.estimatedCount.toLocaleString()} users selected
+                        </span>
+                        <Badge variant="outline">
+                          {userSelection.type === 'all' ? 'All Users' :
+                           userSelection.type === 'individual' ? 'Individual Selection' :
+                           userSelection.type === 'group' ? 'Group Selection' :
+                           'Smart Filter'}
+                        </Badge>
+                      </div>
                     </div>
+                    
+                    {userSelection.type === 'individual' && userSelection.userIds.length > 1 && (
+                      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                        <div className="flex items-start gap-2">
+                          <Bell className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                          <div className="text-xs text-blue-700 dark:text-blue-300">
+                            <strong>Multiple Individual Users:</strong> {userSelection.userIds.length} separate notification records will be created in the database, each with a specific user ID in the recipient_id field.
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -922,8 +1388,8 @@ export function NotificationsPage() {
               <div className="space-y-3">
                 <Label>Schedule</Label>
                 <RadioGroup 
-                  value={newNotification.scheduleType} 
-                  onValueChange={(value: any) => setNewNotification({...newNotification, scheduleType: value})}
+                  value={newNotification.schedule_type} 
+                  onValueChange={(value: any) => setNewNotification({...newNotification, schedule_type: value})}
                 >
                   <div className="flex items-center space-x-2">
                     <RadioGroupItem value="now" id="now" />
@@ -941,22 +1407,22 @@ export function NotificationsPage() {
                   </div>
                 </RadioGroup>
 
-                {newNotification.scheduleType === 'later' && (
+                {newNotification.schedule_type === 'later' && (
                   <Input
                     type="datetime-local"
-                    value={newNotification.scheduleDate}
-                    onChange={(e) => setNewNotification({...newNotification, scheduleDate: e.target.value})}
+                    value={newNotification.schedule_date}
+                    onChange={(e) => setNewNotification({...newNotification, schedule_date: e.target.value})}
                   />
                 )}
               </div>
 
               <Button 
                 onClick={handleSendNotification}
-                disabled={!newNotification.title || !newNotification.message}
+                disabled={!newNotification.title || !newNotification.description}
                 className="w-full"
               >
                 <Send className="w-4 h-4 mr-2" />
-                {newNotification.scheduleType === 'now' ? 'Send Now' : 'Schedule Notification'}
+                {newNotification.schedule_type === 'now' ? 'Send Now' : 'Schedule Notification'}
               </Button>
             </CardContent>
           </Card>
@@ -1024,57 +1490,106 @@ export function NotificationsPage() {
                     <TableRow>
                       <TableHead>Title</TableHead>
                       <TableHead>Type</TableHead>
-                      <TableHead>Recipient</TableHead>
+                      <TableHead>Delivery</TableHead>
+                      <TableHead>Media</TableHead>
+                      <TableHead>Recipients</TableHead>
                       <TableHead>Date</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredNotifications.map((notification) => (
                       <TableRow key={notification.id}>
-                        <TableCell className="font-medium">{notification.title}</TableCell>
-                        <TableCell>{getTypeBadge(notification.type)}</TableCell>
-                        <TableCell>{notification.recipient}</TableCell>
-                        <TableCell>{new Date(notification.date).toLocaleDateString()}</TableCell>
-                        <TableCell>{getStatusBadge(notification.status)}</TableCell>
-                        <TableCell className="text-right">
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button size="sm" variant="ghost">
-                                View
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>{notification.title}</DialogTitle>
-                              </DialogHeader>
-                              <div className="space-y-4">
-                                <div>
-                                  <Label className="text-sm text-muted-foreground">Type</Label>
-                                  <p>{getTypeBadge(notification.type)}</p>
-                                </div>
-                                <div>
-                                  <Label className="text-sm text-muted-foreground">Message</Label>
-                                  <p className="mt-1">{notification.message}</p>
-                                </div>
-                                <div>
-                                  <Label className="text-sm text-muted-foreground">Recipient</Label>
-                                  <p>{notification.recipient}</p>
-                                </div>
-                                <div className="flex justify-between">
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{notification.title}</div>
+                            <div className="text-sm text-muted-foreground">
+                              {notification.description?.substring(0, 50)}...
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>{getTypeBadge(notification.noti_type)}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">
+                            {notification.delivery_type || 'both'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {notification.media_url && (
+                            <Badge variant="outline" className="flex items-center gap-1">
+                              <Image className="w-3 h-3" />
+                              Media
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {notification.recipient_type === 'all_users' ? 'All Users' :
+                           notification.recipient_type === 'individual' ? 'Individual' :
+                           notification.recipient_type === 'groups' ? 'Groups' :
+                           'Smart Filter'}
+                        </TableCell>
+                        <TableCell>
+                          {notification.created_at ? new Date(notification.created_at).toLocaleDateString() : '-'}
+                        </TableCell>
+                        <TableCell>{getStatusBadge(notification)}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button size="sm" variant="ghost">
+                                  <Eye className="w-4 h-4" />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>{notification.title}</DialogTitle>
+                                </DialogHeader>
+                                <div className="space-y-4">
                                   <div>
-                                    <Label className="text-sm text-muted-foreground">Date</Label>
-                                    <p>{new Date(notification.date).toLocaleDateString()}</p>
+                                    <Label className="text-sm text-muted-foreground">Type</Label>
+                                    <p>{getTypeBadge(notification.noti_type)}</p>
                                   </div>
                                   <div>
-                                    <Label className="text-sm text-muted-foreground">Status</Label>
-                                    <p>{getStatusBadge(notification.status)}</p>
+                                    <Label className="text-sm text-muted-foreground">Description</Label>
+                                    <p className="mt-1">{notification.description}</p>
+                                  </div>
+                                  <div>
+                                    <Label className="text-sm text-muted-foreground">Recipients</Label>
+                                    <p>
+                                      {notification.recipient_type === 'all_users' ? 'All Users' :
+                                       notification.recipient_type === 'individual' ? 'Individual' :
+                                       notification.recipient_type === 'groups' ? 'Groups' :
+                                       'Smart Filter'}
+                                    </p>
+                                  </div>
+                                  {notification.media_url && (
+                                    <div>
+                                      <Label className="text-sm text-muted-foreground">Media</Label>
+                                      <img 
+                                        src={notification.media_url} 
+                                        alt="Notification media" 
+                                        className="mt-2 max-w-full h-32 object-cover rounded"
+                                      />
+                                    </div>
+                                  )}
+                                  <div className="flex justify-between">
+                                    <div>
+                                      <Label className="text-sm text-muted-foreground">Created</Label>
+                                      <p>{notification.created_at ? new Date(notification.created_at).toLocaleDateString() : '-'}</p>
+                                    </div>
+                                    <div>
+                                      <Label className="text-sm text-muted-foreground">Status</Label>
+                                      <p>{getStatusBadge(notification)}</p>
+                                    </div>
                                   </div>
                                 </div>
-                              </div>
-                            </DialogContent>
-                          </Dialog>
+                              </DialogContent>
+                            </Dialog>
+                            <Button size="sm" variant="ghost">
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -1103,7 +1618,7 @@ export function NotificationsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="offer-title">Title</Label>
                   <Input
@@ -1141,7 +1656,7 @@ export function NotificationsPage() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="reward-type">Reward Type</Label>
                   <Select 
@@ -1168,7 +1683,7 @@ export function NotificationsPage() {
                     onChange={(e) => setNewOfferNotification({...newOfferNotification, rewardAmount: parseInt(e.target.value) || 0})}
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2 sm:col-span-2 lg:col-span-1">
                   <Label htmlFor="expiry-date">Expiry Date</Label>
                   <Input
                     id="expiry-date"
@@ -1187,19 +1702,32 @@ export function NotificationsPage() {
                 />
                 
                 {offerUserSelection.estimatedCount > 0 && (
-                  <div className="bg-muted/30 rounded-lg p-3">
-                    <div className="flex items-center gap-2 text-sm">
-                      <Target className="w-4 h-4 text-primary" />
-                      <span className="font-medium">
-                        {offerUserSelection.estimatedCount.toLocaleString()} users selected
-                      </span>
-                      <Badge variant="outline">
-                        {offerUserSelection.type === 'all' ? 'All Users' :
-                         offerUserSelection.type === 'individual' ? 'Individual Selection' :
-                         offerUserSelection.type === 'group' ? 'Group Selection' :
-                         'Smart Filter'}
-                      </Badge>
+                  <div className="space-y-2">
+                    <div className="bg-muted/30 rounded-lg p-3">
+                      <div className="flex items-center gap-2 text-sm">
+                        <Target className="w-4 h-4 text-primary" />
+                        <span className="font-medium">
+                          {offerUserSelection.estimatedCount.toLocaleString()} users selected
+                        </span>
+                        <Badge variant="outline">
+                          {offerUserSelection.type === 'all' ? 'All Users' :
+                           offerUserSelection.type === 'individual' ? 'Individual Selection' :
+                           offerUserSelection.type === 'group' ? 'Group Selection' :
+                           'Smart Filter'}
+                        </Badge>
+                      </div>
                     </div>
+                    
+                    {offerUserSelection.type === 'individual' && offerUserSelection.userIds.length > 1 && (
+                      <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                        <div className="flex items-start gap-2">
+                          <Gift className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
+                          <div className="text-xs text-blue-700 dark:text-blue-300">
+                            <strong>Multiple Individual Users:</strong> This offer notification will be sent to {offerUserSelection.userIds.length} individual users.
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -1214,28 +1742,28 @@ export function NotificationsPage() {
                 
                 <div className="space-y-3">
                   <Label>Color Scheme</Label>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {Object.entries(colorSchemes).map(([key, scheme]) => (
                       <div
                         key={key}
-                        className={`relative cursor-pointer rounded-lg p-3 border-2 transition-all ${
+                        className={`relative cursor-pointer rounded-lg p-2 border-2 transition-all ${
                           newOfferNotification.colorScheme === key 
                             ? 'border-primary ring-2 ring-primary/20' 
                             : 'border-border hover:border-muted-foreground'
                         }`}
                         onClick={() => setNewOfferNotification({...newOfferNotification, colorScheme: key as any})}
                       >
-                        <div className={`w-full h-8 rounded ${scheme.preview} mb-2`}></div>
+                        <div className={`w-full h-6 rounded ${scheme.preview} mb-1`}></div>
                         <div className="text-xs font-medium flex items-center gap-1">
                           <span>{scheme.icon}</span>
-                          {scheme.name}
+                          <span className="truncate">{scheme.name}</span>
                         </div>
                       </div>
                     ))}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label>Urgency Level</Label>
                     <Select 
@@ -1300,7 +1828,7 @@ export function NotificationsPage() {
                         value={newOfferNotification.reminderInterval} 
                         onValueChange={(value: any) => setNewOfferNotification({...newOfferNotification, reminderInterval: value})}
                       >
-                        <SelectTrigger className="w-full md:w-[200px]">
+                        <SelectTrigger className="w-full sm:w-[200px]">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -1337,7 +1865,7 @@ export function NotificationsPage() {
                         )}
                       </div>
                       
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Question Type</Label>
                           <Select 
@@ -1412,7 +1940,7 @@ export function NotificationsPage() {
                         )}
                       </div>
                       
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Task Type</Label>
                           <Select 
@@ -1533,10 +2061,10 @@ export function NotificationsPage() {
                     
                     <Separator />
                     
-                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 text-sm">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-sm">
                       <div>
                         <Label className="text-muted-foreground">Target</Label>
-                        <p>{offer.targetAudience}</p>
+                        <p className="text-xs truncate">{offer.targetAudience}</p>
                       </div>
                       <div>
                         <Label className="text-muted-foreground">Responses</Label>
@@ -1548,20 +2076,20 @@ export function NotificationsPage() {
                       </div>
                       <div>
                         <Label className="text-muted-foreground">Expires</Label>
-                        <p>{new Date(offer.expiryDate).toLocaleDateString()}</p>
+                        <p className="text-xs">{new Date(offer.expiryDate).toLocaleDateString()}</p>
                       </div>
                       <div>
                         <Label className="text-muted-foreground">Theme</Label>
                         <div className="flex items-center gap-1">
                           <div className={`w-3 h-3 rounded ${colorSchemes[offer.colorScheme].preview}`}></div>
-                          <span className="text-xs">{colorSchemes[offer.colorScheme].name}</span>
+                          <span className="text-xs truncate">{colorSchemes[offer.colorScheme].name}</span>
                         </div>
                       </div>
                       <div>
                         <Label className="text-muted-foreground">Display</Label>
-                        <p className="flex items-center gap-1">
-                          <Timer className="w-3 h-3" />
-                          {offer.displayDuration === 'until-completed' ? 'Until done' : offer.displayDuration}
+                        <p className="flex items-center gap-1 text-xs">
+                          <Timer className="w-3 h-3 flex-shrink-0" />
+                          <span className="truncate">{offer.displayDuration === 'until-completed' ? 'Until done' : offer.displayDuration}</span>
                         </p>
                       </div>
                     </div>

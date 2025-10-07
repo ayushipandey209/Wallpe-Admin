@@ -9,7 +9,7 @@ import { ListingsManagement } from './components/ListingsManagement';
 import { ListingDetailsScreen } from './components/ListingDetailsScreen';
 import { UserManagement } from './components/UserManagement';
 import { ApprovalsPage } from './components/ApprovalsPage';
-import { NotificationsPage } from './components/NotificationsPage';
+import { NotificationsPage } from './components/NotificationsPageUpdated';
 import { AnalyticsPage } from './components/AnalyticsPage';
 import { SettingsPage } from './components/SettingsPage';
 
