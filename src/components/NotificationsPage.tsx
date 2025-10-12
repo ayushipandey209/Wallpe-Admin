@@ -968,7 +968,7 @@ export function NotificationsPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Send className="w-5 h-5" />
-                  Send General Notification
+                   Send General Notification
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">

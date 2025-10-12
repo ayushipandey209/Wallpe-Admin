@@ -9,7 +9,7 @@ import { ListingsManagement } from './components/ListingsManagement';
 import { ListingDetailsScreen } from './components/ListingDetailsScreen';
 import { UserManagement } from './components/UserManagement';
 import { ApprovalsPage } from './components/ApprovalsPage';
-import { NotificationsPage } from './components/NotificationsPageUpdated';
+import { Notifications } from './components/notification/Notification';
 import { AnalyticsPage } from './components/AnalyticsPage';
 import { SettingsPage } from './components/SettingsPage';
 
@@ -25,7 +25,7 @@ const navigationItems: NavigationItem[] = [
   { id: 'listings', label: 'Listings Management', icon: List, component: ListingsManagement },
   { id: 'users', label: 'User Management', icon: Users, component: UserManagement },
   { id: 'approvals', label: 'Approvals', icon: CheckCircle, component: ApprovalsPage },
-  { id: 'notifications', label: 'Notifications', icon: Bell, component: NotificationsPage },
+  { id: 'notifications', label: 'Notifications', icon: Bell, component: Notifications },
   { id: 'analytics', label: 'Analytics & Reports', icon: BarChart3, component: AnalyticsPage },
   { id: 'settings', label: 'Settings', icon: Settings, component: SettingsPage },
 ];
@@ -120,7 +120,7 @@ function AppLayout() {
               <Route path="/listings/:id" element={<ListingDetailsScreen />} />
               <Route path="/users" element={<UserManagement />} />
               <Route path="/approvals" element={<ApprovalsPage />} />
-              <Route path="/notifications" element={<NotificationsPage />} />
+               <Route path="/notifications" element={<Notifications />} />
               <Route path="/analytics" element={<AnalyticsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Routes>
