@@ -20,6 +20,10 @@ import {
   Search,
   Loader2,
   UserCheck,
+  Image,
+  Upload,
+  ChevronDown,
+  Check,
 } from "lucide-react";
 
 const GeneralNotification = () => {
@@ -28,14 +32,17 @@ const GeneralNotification = () => {
     description: "",
     noti_type: "info",
     delivery_type: "both",
-    media_type: "none",
-    media_url: "",
     deep_link: "",
     external_url: "",
     recipients: "all",
-    recipient_id: [], // Array to store selected user IDs
+    recipient_id: [],
     schedule_type: "now",
     schedule_date: "",
+
+    media_type: "none",
+    media_url: "",
+    alt_text: "",
+    uploaded_file: null,
   });
 
   console.log("FORMF: ", formData);
@@ -102,10 +109,10 @@ const GeneralNotification = () => {
   };
 
   const handleRecipientChange = (type) => {
-    setFormData((prev) => ({ 
-      ...prev, 
+    setFormData((prev) => ({
+      ...prev,
       recipients: type,
-      recipient_id: [] // Reset recipient_id when changing type
+      recipient_id: [], // Reset recipient_id when changing type
     }));
 
     // Reset selection when changing recipient type
@@ -129,14 +136,16 @@ const GeneralNotification = () => {
       return false;
     }
 
-    if (formData.recipients === "individual" && formData.recipient_id.length === 0) {
+    if (
+      formData.recipients === "individual" &&
+      formData.recipient_id.length === 0
+    ) {
       alert("Please select at least one user");
       return false;
     }
 
     return true;
   };
-
   const handleSendNotification = async () => {
     if (!validateForm()) return;
 
@@ -144,17 +153,52 @@ const GeneralNotification = () => {
     console.log("Selected user IDs:", formData.recipient_id);
 
     try {
-      // Prepare insert data with recipient_id as array
+      let finalMediaUrl = formData.media_url;
+
+      // Handle file upload if user selected "upload_file" option
+      if (formData.media_type === "upload_file" && formData.uploaded_file) {
+        const file = formData.uploaded_file;
+        const fileExt = file.name.split(".").pop();
+        const fileName = `${Date.now()}-${Math.random()
+          .toString(36)
+          .substring(7)}.${fileExt}`;
+        const filePath = `notifications/${fileName}`;
+
+        // Upload to Supabase Storage
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from("notification-media") // Make sure this bucket exists
+          .upload(filePath, file);
+
+        if (uploadError) {
+          console.error("File upload error:", uploadError);
+          throw new Error(`Failed to upload file: ${uploadError.message}`);
+        }
+
+        // Get public URL
+        const {
+          data: { publicUrl },
+        } = supabase.storage.from("notification-media").getPublicUrl(filePath);
+
+        finalMediaUrl = publicUrl;
+      }
+
+      // Prepare insert data with ALL media fields
       const insertData = {
         title: formData.title,
         description: formData.description,
         noti_type: formData.noti_type,
-        media_url: formData.media_url || null,
+
+        // Media fields
+        media_type: formData.media_type,
+        media_url: finalMediaUrl || null,
+        alt_text: formData.alt_text || null,
+
         deep_link: formData.deep_link || null,
         external_url: formData.external_url || null,
         delivery_type: formData.delivery_type,
         recipient_type: formData.recipients,
-        recipient_id: formData.recipients === "individual" ? formData.recipient_id : null,
+        recipient_id:
+          formData.recipients === "individual" ? formData.recipient_id : null,
         created_at: new Date().toISOString(),
         scheduled_at:
           formData.schedule_type === "later" && formData.schedule_date
@@ -177,7 +221,9 @@ const GeneralNotification = () => {
       }
 
       if (formData.recipients === "individual") {
-        alert(`Notification sent successfully to ${formData.recipient_id.length} user(s)!`);
+        alert(
+          `Notification sent successfully to ${formData.recipient_id.length} user(s)!`
+        );
       } else {
         alert("Notification sent successfully!");
       }
@@ -301,6 +347,44 @@ const GeneralNotification = () => {
     </div>
   );
 
+  // DROPDOWN RELATED
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (file && file.size <= 10 * 1024 * 1024) {
+      // 10MB limit
+      setFormData((prev) => ({
+        ...prev,
+        uploaded_file: file,
+      }));
+    } else {
+      alert("File size must be less than 10MB");
+    }
+  };
+
+  const selectMediaType = (type) => {
+    setFormData((prev) => ({
+      ...prev,
+      media_type: type,
+      media_url: "",
+      alt_text: "",
+      uploaded_file: null,
+    }));
+    setIsDropdownOpen(false);
+  };
+
+  const getDropdownLabel = () => {
+    switch (formData.media_type) {
+      case "image_url":
+        return "Image URL";
+      case "upload_file":
+        return "Upload File";
+      default:
+        return "No Media";
+    }
+  };
+
   return (
     <>
       <div className="flex gap-6 w-full p-1 bg-gray-50 min-h-screen">
@@ -407,16 +491,160 @@ const GeneralNotification = () => {
           {/* Media URL */}
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Media URL (Optional)
+              Media Options
             </label>
-            <input
-              type="text"
-              name="media_url"
-              value={formData.media_url}
-              onChange={handleInputChange}
-              placeholder="https://example.com/image.jpg"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
+
+            {/* Dropdown */}
+
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-white text-left flex items-center justify-between focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <span className="flex items-center gap-2">
+                  {formData.media_type === "image_url" && (
+                    <Image className="w-5 h-5" />
+                  )}
+                  {formData.media_type === "upload_file" && (
+                    <Upload className="w-5 h-5" />
+                  )}
+                  {getDropdownLabel()}
+                </span>
+                <ChevronDown
+                  className={`w-5 h-5 transition-transform ${
+                    isDropdownOpen ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+
+              {/* Dropdown Menu */}
+              {isDropdownOpen && (
+                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => selectMediaType("none")}
+                    className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2"
+                  >
+                    <span>No Media</span>
+                    {formData.media_type === "none" && (
+                      <Check className="w-5 h-5 ml-auto" />
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => selectMediaType("image_url")}
+                    className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 border-t border-gray-200"
+                  >
+                    <Image className="w-5 h-5" />
+                    <span>Image URL</span>
+                    {formData.media_type === "image_url" && (
+                      <Check className="w-5 h-5 ml-auto" />
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => selectMediaType("upload_file")}
+                    className="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center gap-2 border-t border-gray-200 rounded-b-lg"
+                  >
+                    <Upload className="w-5 h-5" />
+                    <span>Upload File</span>
+                    {formData.media_type === "upload_file" && (
+                      <Check className="w-5 h-5 ml-auto" />
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Image URL Option */}
+            {formData.media_type === "image_url" && (
+              <div className="mt-4 space-y-3">
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">
+                    Image URL
+                  </label>
+                  <input
+                    type="text"
+                    name="media_url"
+                    value={formData.media_url}
+                    onChange={handleInputChange}
+                    placeholder="https://example.com/image.jpg"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">
+                    Alt text / Description...
+                  </label>
+                  <input
+                    type="text"
+                    name="alt_text"
+                    value={formData.alt_text}
+                    onChange={handleInputChange}
+                    placeholder="Describe the image"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Upload File Option */}
+            {formData.media_type === "upload_file" && (
+              <div className="mt-4 space-y-3">
+                <div>
+                  <label
+                    htmlFor="file-upload"
+                    className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100"
+                  >
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                      <svg
+                        className="w-8 h-8 mb-2 text-gray-500"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                        />
+                      </svg>
+                      <p className="mb-1 text-sm text-gray-700">
+                        {formData.uploaded_file
+                          ? formData.uploaded_file.name
+                          : "Click to upload file"}
+                      </p>
+                      <p className="text-xs text-gray-500">Max size: 10MB</p>
+                    </div>
+                    <input
+                      id="file-upload"
+                      type="file"
+                      name="uploaded_file"
+                      onChange={handleFileChange}
+                      className="hidden"
+                      accept="image/*"
+                    />
+                  </label>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-600 mb-1">
+                    Alt text / Description...
+                  </label>
+                  <input
+                    type="text"
+                    name="alt_text"
+                    value={formData.alt_text}
+                    onChange={handleInputChange}
+                    placeholder="Describe the image"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Action Links */}
