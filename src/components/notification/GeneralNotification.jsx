@@ -162,11 +162,11 @@ const GeneralNotification = () => {
         const fileName = `${Date.now()}-${Math.random()
           .toString(36)
           .substring(7)}.${fileExt}`;
-        const filePath = `notifications/${fileName}`;
+        const filePath = `general_notification/${fileName}`;
 
-        // Upload to Supabase Storage
+        // Upload to correct bucket (`wallpe-assets`)
         const { data: uploadData, error: uploadError } = await supabase.storage
-          .from("notification-media") // Make sure this bucket exists
+          .from("wallpe-assets")
           .upload(filePath, file);
 
         if (uploadError) {
@@ -174,10 +174,10 @@ const GeneralNotification = () => {
           throw new Error(`Failed to upload file: ${uploadError.message}`);
         }
 
-        // Get public URL
+        // Get public URL for the uploaded image
         const {
           data: { publicUrl },
-        } = supabase.storage.from("notification-media").getPublicUrl(filePath);
+        } = supabase.storage.from("wallpe-assets").getPublicUrl(filePath);
 
         finalMediaUrl = publicUrl;
       }
